@@ -1,7 +1,7 @@
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron')
-const { EndpointStore } = require('./core/store.cjs')
+const { DEFAULT_THEME, EndpointStore, SettingsStore } = require('./core/store.cjs')
 const { normalizeEndpoint, loopbackUrl } = require('./core/endpoint.cjs')
 const { TunnelManager } = require('./core/tunnel-manager.cjs')
 
@@ -9,10 +9,18 @@ app.enableSandbox()
 
 let mainWindow
 let endpoints = []
+let settings
 let closing = false
 const tunnels = new TunnelManager()
 const indexFile = path.join(__dirname, 'renderer', 'index.html')
 const indexUrl = pathToFileURL(indexFile).toString()
+const themeBackgrounds = {
+  'whale-song': '#061923',
+  'nautical-chart': '#f7f3e4',
+  phosphor: '#050806',
+  'bauhaus-signal': '#f1eedf',
+  'soft-porcelain': '#fbfafd',
+}
 
 function findEndpoint(id) {
   const endpoint = endpoints.find((entry) => entry.id === id)
@@ -26,7 +34,7 @@ function assertSender(event) {
   }
 }
 
-function registerIpc(store) {
+function registerIpc(endpointStore, settingsStore) {
   ipcMain.handle('endpoints:list', (event) => {
     assertSender(event)
     return { endpoints, tunnels: tunnels.list() }
@@ -37,7 +45,7 @@ function registerIpc(store) {
     const normalized = normalizeEndpoint(input)
     const next = endpoints.filter((entry) => entry.id !== normalized.id)
     next.push(normalized)
-    endpoints = store.save(next)
+    endpoints = endpointStore.save(next)
     return normalized
   })
 
@@ -45,8 +53,20 @@ function registerIpc(store) {
     assertSender(event)
     findEndpoint(id)
     await tunnels.stop(id)
-    endpoints = store.save(endpoints.filter((entry) => entry.id !== id))
+    endpoints = endpointStore.save(endpoints.filter((entry) => entry.id !== id))
     return true
+  })
+
+  ipcMain.handle('settings:get', (event) => {
+    assertSender(event)
+    return settings
+  })
+
+  ipcMain.handle('settings:save', (event, input) => {
+    assertSender(event)
+    settings = settingsStore.save(input)
+    mainWindow?.setBackgroundColor(themeBackgrounds[settings.theme])
+    return settings
   })
 
   ipcMain.handle('tunnels:start', async (event, id) => {
@@ -78,7 +98,7 @@ function createWindow() {
     minWidth: 760,
     minHeight: 540,
     title: 'DSH Tunnel',
-    backgroundColor: '#f4f2ed',
+    backgroundColor: themeBackgrounds[settings?.theme] ?? themeBackgrounds[DEFAULT_THEME],
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -95,14 +115,21 @@ function createWindow() {
 
 app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
-  const store = new EndpointStore(path.join(app.getPath('userData'), 'endpoints.json'))
+  const endpointStore = new EndpointStore(path.join(app.getPath('userData'), 'endpoints.json'))
+  const settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'))
   try {
-    endpoints = store.load()
+    endpoints = endpointStore.load()
   } catch (error) {
     dialog.showErrorBox('DSH Tunnel', `Unable to read endpoint configuration: ${error.message}`)
     endpoints = []
   }
-  registerIpc(store)
+  try {
+    settings = settingsStore.load()
+  } catch (error) {
+    dialog.showErrorBox('DSH Tunnel', `Unable to read interface settings: ${error.message}`)
+    settings = { theme: DEFAULT_THEME }
+  }
+  registerIpc(endpointStore, settingsStore)
   tunnels.on('state', (state) => mainWindow?.webContents.send('tunnels:state', state))
   createWindow()
   app.on('activate', () => {

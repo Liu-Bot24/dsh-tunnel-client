@@ -1,44 +1,113 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="whale-song">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
     <title>DSH Tunnel</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
-    <main class="layout">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">DSH TUNNEL</p>
-          <h1>选择主机，然后开始工作。</h1>
-          <p class="subtitle">客户端在本机建立 SSH 隧道，并用浏览器打开 loopback DSH。无需在终端输入命令。</p>
+    <div class="app-shell">
+      <header class="app-toolbar">
+        <div class="toolbar-brand">
+          <svg viewBox="0 0 36 24" aria-hidden="true">
+            <path d="M3 13c4-8 13-11 21-7 3 1 5 3 7 5 1-2 3-3 5-3-1 4-2 6-5 7 3 1 4 3 5 6-3 1-6-1-8-4-4 3-9 4-14 3-5 0-9-2-11-5-1 1-2 1-3 0 1-1 2-2 3-2Z"/>
+          </svg>
+          <span>DSH Tunnel</span>
         </div>
-        <button id="add-endpoint" class="button primary" type="button">添加主机</button>
+        <div class="toolbar-actions">
+          <button id="open-settings" class="icon-control" type="button" aria-label="设置" title="设置">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.8 2.8h4.4l.5 2a8 8 0 0 1 1.5.9l2-.6 2.2 3.8-1.5 1.4a8 8 0 0 1 0 1.8l1.5 1.4-2.2 3.8-2-.6a8 8 0 0 1-1.5.9l-.5 2H9.8l-.5-2a8 8 0 0 1-1.5-.9l-2 .6-2.2-3.8 1.5-1.4a8 8 0 0 1 0-1.8L3.6 8.9l2.2-3.8 2 .6a8 8 0 0 1 1.5-.9l.5-2Zm2.2 5.7a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/></svg>
+          </button>
+          <button id="add-endpoint" class="button primary toolbar-add" type="button"><span aria-hidden="true">＋</span>添加主机</button>
+        </div>
       </header>
 
-      <section id="notice" class="notice hidden" role="status"></section>
-      <section id="endpoint-list" class="endpoint-list" aria-live="polite"></section>
+      <main class="workspace">
+        <aside class="endpoint-sidebar">
+          <div class="sidebar-heading">
+            <h2>主机</h2>
+            <span id="endpoint-count">0</span>
+          </div>
+          <section id="endpoint-list" class="endpoint-list" role="listbox" aria-label="DSH 主机"></section>
+          <section id="sidebar-empty" class="sidebar-empty hidden">
+            <p>还没有主机</p>
+            <button id="empty-add-endpoint" class="text-control" type="button">添加主机</button>
+          </section>
+        </aside>
 
-      <section id="empty-state" class="empty-state hidden">
-        <h2>还没有 DSH 主机</h2>
-        <p>添加 SSH 主机或 SSH config 别名，客户端会负责端口转发和连接检查。</p>
-      </section>
-    </main>
+        <section class="detail-pane">
+          <section id="notice" class="notice hidden" role="status"></section>
+          <section id="empty-state" class="empty-state hidden">
+            <div class="empty-mark">＋</div>
+            <h1>添加一台 DSH 主机</h1>
+            <p>填写 SSH 主机和端口转发信息。</p>
+            <button id="detail-add-endpoint" class="button primary" type="button">添加主机</button>
+          </section>
+
+          <article id="endpoint-detail" class="endpoint-detail hidden">
+            <div class="theme-decoration" aria-hidden="true">
+              <svg class="whale-decoration" viewBox="0 0 320 170"><path d="M42 91c22-45 75-66 133-57 28 4 50 16 65 32 14-15 31-22 49-19-4 17-14 29-31 36 17 6 27 18 31 35-20 3-38-5-52-22-22 22-55 34-97 35-41 1-78-10-99-31-10 7-21 8-31 3 11-9 22-14 32-12Zm58-21c-7 0-12 5-12 11 0 7 5 12 12 12 6 0 11-5 11-12 0-6-5-11-11-11Z"/><circle cx="135" cy="15" r="7"/><circle cx="157" cy="8" r="4"/><circle cx="174" cy="20" r="3"/></svg>
+              <svg class="compass-decoration" viewBox="0 0 180 180"><circle cx="90" cy="90" r="72"/><circle cx="90" cy="90" r="46"/><path d="m90 18 9 63 63 9-63 9-9 63-9-63-63-9 63-9 9-63Z"/><path d="m90 52 11 27 27 11-27 11-11 27-11-27-27-11 27-11 11-27Z"/></svg>
+              <div class="signal-circle"></div>
+              <div class="signal-square"></div>
+            </div>
+
+            <header class="detail-heading">
+              <div>
+                <p id="detail-alias" class="detail-alias"></p>
+                <h1 id="detail-name"></h1>
+              </div>
+              <div id="detail-status" class="status"><i></i><span>未连接</span></div>
+            </header>
+
+            <div class="detail-content">
+              <section class="detail-group">
+                <h2>连接</h2>
+                <dl>
+                  <div><dt>SSH</dt><dd id="detail-ssh"></dd></div>
+                  <div><dt>认证</dt><dd>系统 OpenSSH</dd></div>
+                </dl>
+              </section>
+              <section class="detail-group">
+                <h2>端口转发</h2>
+                <dl>
+                  <div><dt>本机</dt><dd id="detail-local"></dd></div>
+                  <div><dt>远端</dt><dd id="detail-remote"></dd></div>
+                </dl>
+              </section>
+              <section class="route-strip" aria-label="端口转发路径">
+                <div><span>本机浏览器</span><code id="route-local"></code></div>
+                <div class="route-line"><i></i><span>SSH</span><i></i></div>
+                <div><span>远端 DSH</span><code id="route-remote"></code></div>
+              </section>
+              <p id="endpoint-error" class="endpoint-error hidden"></p>
+            </div>
+
+            <footer class="detail-actions">
+              <button id="edit-endpoint" class="button secondary" type="button">编辑</button>
+              <button id="stop-tunnel" class="button secondary" type="button">停止</button>
+              <button id="primary-endpoint-action" class="button primary" type="button">连接并打开</button>
+            </footer>
+          </article>
+        </section>
+      </main>
+    </div>
 
     <dialog id="endpoint-dialog">
       <form id="endpoint-form">
         <div class="dialog-heading">
           <div>
-            <p class="eyebrow">ENDPOINT</p>
+            <p class="dialog-kicker">主机</p>
             <h2 id="dialog-title">添加 DSH 主机</h2>
           </div>
-          <button id="close-dialog" class="icon-button" aria-label="关闭" type="button">×</button>
+          <button id="close-dialog" class="icon-control" aria-label="关闭" type="button">×</button>
         </div>
         <input id="endpoint-id" type="hidden">
-        <label>显示名称<input id="endpoint-name" required maxlength="80" placeholder="工作 Mac"></label>
-        <label>SSH 主机或 config 别名<input id="ssh-host" required maxlength="255" placeholder="work-mac"></label>
+        <label>显示名称<input id="endpoint-name" required maxlength="80"></label>
+        <label>SSH 主机或 config 别名<input id="ssh-host" required maxlength="255"></label>
         <div class="field-row">
           <label>SSH 用户（可选）<input id="ssh-user" maxlength="80"></label>
           <label>SSH 端口（可选）<input id="ssh-port" inputmode="numeric" min="1" max="65535" placeholder="使用 SSH config"></label>
@@ -47,10 +116,56 @@
           <label>远端 DSH 端口<input id="remote-port" required inputmode="numeric" min="1" max="65535" value="3080"></label>
           <label>本地端口<input id="local-port" required inputmode="numeric" min="1" max="65535" value="13080"></label>
         </div>
-        <p class="form-hint">身份认证使用系统 OpenSSH、SSH config 和 SSH Agent；客户端不会保存密码。</p>
-        <div class="dialog-actions">
+        <p class="form-hint">使用系统 OpenSSH、SSH config 和 SSH Agent。客户端不保存密码。</p>
+        <div class="dialog-actions split-actions">
+          <button id="delete-endpoint" class="button danger hidden" type="button">移除主机</button>
+          <span></span>
           <button id="cancel-dialog" class="button secondary" type="button">取消</button>
           <button id="save-endpoint" class="button primary" value="default" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="settings-dialog" class="settings-dialog">
+      <form id="settings-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="dialog-kicker">设置</p>
+            <h2>界面主题</h2>
+          </div>
+          <button id="close-settings" class="icon-control" aria-label="关闭" type="button">×</button>
+        </div>
+        <fieldset class="theme-options">
+          <legend>选择主题</legend>
+          <label class="theme-option">
+            <input type="radio" name="theme" value="whale-song">
+            <span class="theme-preview whale-preview"><i></i><i></i><i></i></span>
+            <span><strong>深海鲸歌</strong><small>深蓝、鲸影、冷光</small></span>
+          </label>
+          <label class="theme-option">
+            <input type="radio" name="theme" value="nautical-chart">
+            <span class="theme-preview nautical-preview"><i></i><i></i><i></i></span>
+            <span><strong>航海图纸</strong><small>纸张、海图、经纬</small></span>
+          </label>
+          <label class="theme-option">
+            <input type="radio" name="theme" value="phosphor">
+            <span class="theme-preview phosphor-preview"><i></i><i></i><i></i></span>
+            <span><strong>夜视终端</strong><small>黑场、荧光、等宽</small></span>
+          </label>
+          <label class="theme-option">
+            <input type="radio" name="theme" value="bauhaus-signal">
+            <span class="theme-preview signal-preview"><i></i><i></i><i></i></span>
+            <span><strong>包豪斯信号</strong><small>原色、几何、强分区</small></span>
+          </label>
+          <label class="theme-option">
+            <input type="radio" name="theme" value="soft-porcelain">
+            <span class="theme-preview porcelain-preview"><i></i><i></i><i></i></span>
+            <span><strong>柔雾器物</strong><small>淡紫、陶瓷、轻鲸影</small></span>
+          </label>
+        </fieldset>
+        <div class="dialog-actions">
+          <button id="cancel-settings" class="button secondary" type="button">取消</button>
+          <button class="button primary" type="submit">保存主题</button>
         </div>
       </form>
     </dialog>

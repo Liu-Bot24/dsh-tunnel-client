@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('dshTunnel', Object.freeze({
   listEndpoints: () => ipcRenderer.invoke('endpoints:list'),
   saveEndpoint: (endpoint) => ipcRenderer.invoke('endpoints:save', endpoint),
   deleteEndpoint: (id) => ipcRenderer.invoke('endpoints:delete', id),
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   startTunnel: (id) => ipcRenderer.invoke('tunnels:start', id),
   stopTunnel: (id) => ipcRenderer.invoke('tunnels:stop', id),
   openEndpoint: (id) => ipcRenderer.invoke('endpoints:open', id),

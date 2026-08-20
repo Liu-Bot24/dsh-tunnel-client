@@ -3,6 +3,15 @@ const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const { normalizeEndpoint } = require('./endpoint.cjs')
 
+const SUPPORTED_THEMES = Object.freeze([
+  'whale-song',
+  'nautical-chart',
+  'phosphor',
+  'bauhaus-signal',
+  'soft-porcelain',
+])
+const DEFAULT_THEME = 'whale-song'
+
 class EndpointStore {
   constructor(filename) {
     this.filename = filename
@@ -27,13 +36,49 @@ class EndpointStore {
     if (!Array.isArray(entries)) throw new TypeError('entries must be an array')
     const endpoints = entries.map((entry) => normalizeEndpoint(entry))
     assertUnique(endpoints)
-    fs.mkdirSync(path.dirname(this.filename), { recursive: true, mode: 0o700 })
-    const temporary = `${this.filename}.${randomUUID()}.tmp`
-    fs.writeFileSync(temporary, `${JSON.stringify(endpoints, null, 2)}\n`, { mode: 0o600 })
-    fs.renameSync(temporary, this.filename)
-    fs.chmodSync(this.filename, 0o600)
+    writeJson(this.filename, endpoints)
     return endpoints
   }
+}
+
+class SettingsStore {
+  constructor(filename) {
+    this.filename = filename
+  }
+
+  load() {
+    let raw
+    try {
+      raw = fs.readFileSync(this.filename, 'utf8')
+    } catch (error) {
+      if (error && error.code === 'ENOENT') return normalizeSettings({})
+      throw error
+    }
+    return normalizeSettings(JSON.parse(raw))
+  }
+
+  save(input) {
+    const settings = normalizeSettings(input)
+    writeJson(this.filename, settings)
+    return settings
+  }
+}
+
+function normalizeSettings(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    throw new TypeError('settings must be an object')
+  }
+  const theme = input.theme ?? DEFAULT_THEME
+  if (!SUPPORTED_THEMES.includes(theme)) throw new Error(`unsupported theme: ${theme}`)
+  return { theme }
+}
+
+function writeJson(filename, value) {
+  fs.mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 })
+  const temporary = `${filename}.${randomUUID()}.tmp`
+  fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
+  fs.renameSync(temporary, filename)
+  fs.chmodSync(filename, 0o600)
 }
 
 function assertUnique(endpoints) {
@@ -47,4 +92,11 @@ function assertUnique(endpoints) {
   }
 }
 
-module.exports = { EndpointStore, assertUnique }
+module.exports = {
+  DEFAULT_THEME,
+  EndpointStore,
+  SettingsStore,
+  SUPPORTED_THEMES,
+  assertUnique,
+  normalizeSettings,
+}
