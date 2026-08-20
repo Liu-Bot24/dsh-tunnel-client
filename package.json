@@ -1,0 +1,23 @@
+{
+  "name": "dsh-tunnel-client",
+  "productName": "DSH Tunnel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop launcher for switching between DSH hosts through managed SSH local tunnels",
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "check": "node --check src/main.cjs && node --check src/preload.cjs && node --check src/core/endpoint.cjs && node --check src/core/ssh.cjs && node --check src/core/store.cjs && node --check src/core/tunnel-manager.cjs && node --check src/renderer/app.js && node --check scripts/package-mac.mjs",
+    "package:mac": "node scripts/package-mac.mjs",
+    "package:win": "electron-packager . 'DSH Tunnel' --platform=win32 --arch=x64 --out=dist --overwrite --ignore='^/dist($|/)' --ignore='^/test($|/)'"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "43.4.1"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}

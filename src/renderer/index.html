@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <title>DSH Tunnel</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="layout">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">DSH TUNNEL</p>
+          <h1>选择主机，然后开始工作。</h1>
+          <p class="subtitle">客户端在本机建立 SSH 隧道，并用浏览器打开 loopback DSH。无需在终端输入命令。</p>
+        </div>
+        <button id="add-endpoint" class="button primary" type="button">添加主机</button>
+      </header>
+
+      <section id="notice" class="notice hidden" role="status"></section>
+      <section id="endpoint-list" class="endpoint-list" aria-live="polite"></section>
+
+      <section id="empty-state" class="empty-state hidden">
+        <h2>还没有 DSH 主机</h2>
+        <p>添加 SSH 主机或 SSH config 别名，客户端会负责端口转发和连接检查。</p>
+      </section>
+    </main>
+
+    <dialog id="endpoint-dialog">
+      <form id="endpoint-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">ENDPOINT</p>
+            <h2 id="dialog-title">添加 DSH 主机</h2>
+          </div>
+          <button id="close-dialog" class="icon-button" aria-label="关闭" type="button">×</button>
+        </div>
+        <input id="endpoint-id" type="hidden">
+        <label>显示名称<input id="endpoint-name" required maxlength="80" placeholder="工作 Mac"></label>
+        <label>SSH 主机或 config 别名<input id="ssh-host" required maxlength="255" placeholder="work-mac"></label>
+        <div class="field-row">
+          <label>SSH 用户（可选）<input id="ssh-user" maxlength="80"></label>
+          <label>SSH 端口（可选）<input id="ssh-port" inputmode="numeric" min="1" max="65535" placeholder="使用 SSH config"></label>
+        </div>
+        <div class="field-row">
+          <label>远端 DSH 端口<input id="remote-port" required inputmode="numeric" min="1" max="65535" value="3080"></label>
+          <label>本地端口<input id="local-port" required inputmode="numeric" min="1" max="65535" value="13080"></label>
+        </div>
+        <p class="form-hint">身份认证使用系统 OpenSSH、SSH config 和 SSH Agent；客户端不会保存密码。</p>
+        <div class="dialog-actions">
+          <button id="cancel-dialog" class="button secondary" type="button">取消</button>
+          <button id="save-endpoint" class="button primary" value="default" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

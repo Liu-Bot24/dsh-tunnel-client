@@ -1,0 +1,63 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f4f2ed;
+  color: #1d1d1b;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top right, #dbe8de 0, transparent 34%), #f4f2ed; }
+button, input { font: inherit; }
+
+.layout { width: min(1040px, calc(100% - 48px)); margin: 0 auto; padding: 56px 0 80px; }
+.hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; margin-bottom: 40px; }
+.eyebrow { margin: 0 0 10px; color: #416249; font-size: 12px; font-weight: 800; letter-spacing: .16em; }
+h1 { max-width: 650px; margin: 0; font-family: Georgia, "Songti SC", serif; font-size: clamp(38px, 5vw, 64px); font-weight: 500; line-height: 1.02; }
+.subtitle { max-width: 680px; margin: 18px 0 0; color: #66645f; font-size: 16px; line-height: 1.65; }
+
+.button { border: 0; border-radius: 999px; padding: 11px 17px; cursor: pointer; transition: transform .15s ease, opacity .15s ease, background .15s ease; }
+.button:hover:not(:disabled) { transform: translateY(-1px); }
+.button:disabled { cursor: default; opacity: .45; }
+.primary { background: #1f5131; color: white; }
+.secondary { background: #e5e2da; color: #292824; }
+.ghost { background: transparent; color: #31553b; }
+.danger { background: transparent; color: #9f3d32; }
+
+.endpoint-list { display: grid; gap: 14px; }
+.endpoint-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px 24px; padding: 22px 24px; border: 1px solid rgba(41, 40, 36, .12); border-radius: 20px; background: rgba(255, 255, 255, .78); box-shadow: 0 12px 32px rgba(46, 50, 43, .06); }
+.endpoint-identity h2 { margin: 0 0 7px; font-size: 21px; }
+.endpoint-identity p { margin: 0; color: #706e68; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; }
+.status { display: flex; align-items: center; gap: 8px; align-self: start; color: #67655f; font-size: 13px; font-weight: 700; }
+.status-dot { width: 9px; height: 9px; border-radius: 50%; background: #aaa69d; }
+.status.connected .status-dot { background: #2c9550; box-shadow: 0 0 0 4px rgba(44, 149, 80, .12); }
+.status.starting .status-dot, .status.stopping .status-dot { background: #d99a36; }
+.status.error .status-dot { background: #c14d40; }
+.endpoint-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.endpoint-error { grid-column: 1 / -1; margin: 0; padding: 10px 12px; border-radius: 10px; background: #f8e4e0; color: #8d3027; font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; line-height: 1.5; }
+
+.notice { margin: 0 0 20px; padding: 14px 16px; border-radius: 12px; background: #f8e4e0; color: #8d3027; }
+.notice[data-kind="success"] { background: #e0efe3; color: #285c34; }
+.hidden { display: none !important; }
+.empty-state { padding: 72px 24px; border: 1px dashed #b9b5aa; border-radius: 20px; text-align: center; color: #706e68; }
+.empty-state h2 { margin: 0 0 10px; color: #302f2b; }
+
+dialog { width: min(620px, calc(100% - 32px)); border: 0; border-radius: 24px; padding: 0; background: #fbfaf7; box-shadow: 0 28px 90px rgba(30, 32, 28, .25); }
+dialog::backdrop { background: rgba(28, 31, 27, .45); backdrop-filter: blur(4px); }
+#endpoint-form { display: grid; gap: 18px; padding: 28px; }
+.dialog-heading { display: flex; justify-content: space-between; align-items: start; }
+.dialog-heading h2 { margin: 0; font-size: 26px; }
+.icon-button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #ece9e1; cursor: pointer; font-size: 22px; }
+label { display: grid; gap: 8px; color: #4e4c47; font-size: 13px; font-weight: 700; }
+input { width: 100%; border: 1px solid #d6d2c8; border-radius: 11px; padding: 12px 13px; background: white; color: #24231f; outline: none; }
+input:focus { border-color: #39734a; box-shadow: 0 0 0 3px rgba(57, 115, 74, .12); }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.form-hint { margin: 0; color: #77736b; font-size: 12px; line-height: 1.55; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+
+@media (max-width: 720px) {
+  .layout { width: min(100% - 28px, 1040px); padding-top: 34px; }
+  .hero { align-items: stretch; flex-direction: column; }
+  .hero .button { align-self: flex-start; }
+  .endpoint-card { grid-template-columns: 1fr; }
+  .status { grid-row: 2; }
+  .field-row { grid-template-columns: 1fr; }
+}
