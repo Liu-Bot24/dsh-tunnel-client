@@ -10,7 +10,6 @@ function buildSshArgs(input) {
     '-N',
     '-T',
     '-o', 'BatchMode=yes',
-    '-o', 'ClearAllForwardings=yes',
     '-o', 'ExitOnForwardFailure=yes',
     '-o', 'ConnectTimeout=10',
     '-o', 'ServerAliveInterval=30',

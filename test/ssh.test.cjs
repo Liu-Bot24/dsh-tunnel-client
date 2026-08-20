@@ -15,4 +15,5 @@ test('builds a non-interactive local-forward command without a shell', () => {
   assert.deepEqual(args.slice(-5), ['-L', '127.0.0.1:13080:127.0.0.1:3080', '-p', '2222', 'test-user@192.0.2.10'])
   assert.ok(args.includes('BatchMode=yes'))
   assert.ok(args.includes('ExitOnForwardFailure=yes'))
+  assert.equal(args.includes('ClearAllForwardings=yes'), false)
 })
