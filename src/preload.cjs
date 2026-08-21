@@ -23,4 +23,9 @@ contextBridge.exposeInMainWorld('dshTunnel', Object.freeze({
     ipcRenderer.on('local-dsh:state', handler)
     return () => ipcRenderer.removeListener('local-dsh:state', handler)
   },
+  onEndpointsChanged: (listener) => {
+    const handler = (_event, endpoints) => listener(endpoints)
+    ipcRenderer.on('endpoints:changed', handler)
+    return () => ipcRenderer.removeListener('endpoints:changed', handler)
+  },
 }))

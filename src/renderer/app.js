@@ -185,7 +185,7 @@ function renderEndpointDetail() {
   detailFields.error.textContent = stateError
   detailFields.error.classList.toggle('hidden', !stateError)
 
-  primaryActionButton.disabled = busy
+  primaryActionButton.disabled = busy || (!isLocal && state.state === 'error' && state.active)
   if (isLocal && state.state === 'starting') primaryActionButton.textContent = '正在启动…'
   else if (isLocal && state.state === 'stopping') primaryActionButton.textContent = '正在停止…'
   else if (isLocal && state.state === 'running') primaryActionButton.textContent = '打开 WebUI'
@@ -196,7 +196,8 @@ function renderEndpointDetail() {
   else primaryActionButton.textContent = '连接并打开'
   stopButton.classList.remove('hidden')
   stopButton.textContent = isLocal ? '停止' : '断开'
-  stopButton.disabled = isLocal ? state.state !== 'running' || !state.owned : state.state !== 'connected'
+  stopButton.disabled = isLocal ? !state.owned : !state.active
+  if (!isLocal && state.state === 'error' && state.active) stopButton.textContent = '重试断开'
   editButton.classList.remove('hidden')
   editButton.disabled = busy
 }
@@ -256,6 +257,7 @@ async function stopTunnel(id) {
 
 function editEndpoint(endpoint) {
   const isLocal = endpoint?.mode === 'local'
+  const remoteActive = endpoint?.mode === 'ssh' && stateFor(endpoint.id).active
   fields.id.value = endpoint?.id ?? ''
   fields.mode.value = isLocal ? 'local' : 'ssh'
   fields.name.value = endpoint?.name ?? ''
@@ -267,7 +269,10 @@ function editEndpoint(endpoint) {
   sshFieldsElement.classList.toggle('hidden', isLocal)
   localPortFieldElement.classList.toggle('hidden', isLocal)
   portsRowElement.classList.toggle('single-field', isLocal)
-  for (const field of [fields.sshHost, fields.sshUser, fields.sshPort, fields.localPort]) field.disabled = isLocal
+  for (const field of [fields.sshHost, fields.sshUser, fields.sshPort, fields.localPort]) {
+    field.disabled = isLocal || remoteActive
+  }
+  fields.remotePort.disabled = remoteActive
   dshPortLabelElement.textContent = 'DSH 端口'
   dshPortNoteElement.textContent = isLocal
     ? '本机 DSH 的监听端口。'
@@ -438,6 +443,11 @@ window.dshTunnel.onTunnelState((state) => {
 
 window.dshTunnel.onLocalDshState((state) => {
   localDshState = state
+  render()
+})
+
+window.dshTunnel.onEndpointsChanged((nextEndpoints) => {
+  endpoints = nextEndpoints
   render()
 })
 

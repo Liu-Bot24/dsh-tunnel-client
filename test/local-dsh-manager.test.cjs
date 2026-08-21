@@ -22,6 +22,14 @@ function fakeChild() {
   return child
 }
 
+function deferred() {
+  let resolve
+  const promise = new Promise((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 test('recognizes an already-running DSH without taking ownership', async () => {
   const manager = new LocalDshManager({ probe: async () => 'dsh' })
   const state = await manager.start(3080)
@@ -82,8 +90,102 @@ test('starts DSH with the requested port and no shell', async () => {
   assert.equal(child.killCalls.length, 1)
 })
 
+test('coalesces concurrent starts for the same port and rejects a different port', async () => {
+  const firstProbe = deferred()
+  const child = fakeChild()
+  let probeCount = 0
+  let spawnCount = 0
+  const manager = new LocalDshManager({
+    probe: async () => {
+      probeCount += 1
+      if (probeCount === 1) return firstProbe.promise
+      return 'dsh'
+    },
+    spawnProcess: () => {
+      spawnCount += 1
+      return child
+    },
+    pollInterval: 1,
+  })
+  const first = manager.start(3080)
+  const second = manager.start(3080)
+  assert.equal(first, second)
+  await assert.rejects(() => manager.start(3081), /另一个端口/)
+  firstProbe.resolve('free')
+  await first
+  assert.equal(spawnCount, 1)
+})
+
+test('cancels startup before spawning when shutdown begins during the probe', async () => {
+  const firstProbe = deferred()
+  let spawnCount = 0
+  const manager = new LocalDshManager({
+    probe: () => firstProbe.promise,
+    spawnProcess: () => {
+      spawnCount += 1
+      return fakeChild()
+    },
+  })
+  const starting = manager.start(3080)
+  const stopping = manager.stop()
+  firstProbe.resolve('free')
+  await starting
+  const state = await stopping
+  assert.equal(spawnCount, 0)
+  assert.equal(state.state, 'stopped')
+})
+
+test('retains ownership after termination fails and allows stop to be retried', async () => {
+  const child = fakeChild()
+  let probeCount = 0
+  let terminateCount = 0
+  let exited = false
+  const manager = new LocalDshManager({
+    probe: async () => {
+      if (exited) return 'free'
+      return probeCount++ === 0 ? 'free' : 'dsh'
+    },
+    spawnProcess: () => child,
+    terminateProcess: async () => {
+      terminateCount += 1
+      if (terminateCount === 1) throw new Error('terminate failed')
+      exited = true
+      queueMicrotask(() => child.emit('exit', 0, null))
+    },
+    pollInterval: 1,
+    shutdownTimeout: 20,
+  })
+  await manager.start(3080)
+  await assert.rejects(() => manager.stop(), /terminate failed/)
+  assert.equal(manager.getState().owned, true)
+  assert.equal(manager.hasOwnedProcess(), true)
+  const stopped = await manager.stop()
+  assert.equal(stopped.state, 'stopped')
+  assert.equal(terminateCount, 2)
+})
+
+test('changes a running owned process to an error when it exits unexpectedly', async () => {
+  const child = fakeChild()
+  let probeCount = 0
+  const manager = new LocalDshManager({
+    probe: async () => probeCount++ === 0 ? 'free' : 'dsh',
+    spawnProcess: () => child,
+    pollInterval: 1,
+  })
+  await manager.start(3080)
+  child.emit('exit', 1, null)
+  assert.equal(manager.getState().state, 'error')
+  assert.equal(manager.getState().owned, false)
+  assert.equal(manager.getState().error, 'DSH 已停止')
+})
+
 test('lets PATH and PATHEXT resolve the Windows DSH command', () => {
   assert.equal(resolveDshExecutable('win32'), 'dsh')
+})
+
+test('falls back to PATH on macOS when fixed install locations are absent', () => {
+  assert.equal(resolveDshExecutable('darwin', () => false), 'dsh')
+  assert.equal(resolveDshExecutable('darwin', (filename) => filename === '/opt/homebrew/bin/dsh'), '/opt/homebrew/bin/dsh')
 })
 
 test('terminates the owned Windows wrapper process tree without a shell', async () => {

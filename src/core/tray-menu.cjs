@@ -32,6 +32,9 @@ function buildTrayMenuTemplate({
 function localMenu(state, actions) {
   if (state.state === 'starting') return [{ label: '正在启动…', enabled: false }]
   if (state.state === 'stopping') return [{ label: '正在停止…', enabled: false }]
+  if (state.state === 'error' && state.owned) {
+    return [{ label: '重试停止', click: actions.stopLocal }]
+  }
   if (state.state !== 'running') return [{ label: '启动并打开', click: actions.startLocalAndOpen }]
 
   const items = [{ label: '打开 WebUI', click: actions.openLocal }]
@@ -43,6 +46,9 @@ function localMenu(state, actions) {
 function remoteMenu(endpoint, state = { state: 'stopped' }, actions) {
   if (state.state === 'starting') return [{ label: '连接中…', enabled: false }]
   if (state.state === 'stopping') return [{ label: '断开中…', enabled: false }]
+  if (state.state === 'error' && state.active) {
+    return [{ label: '重试断开', click: () => actions.disconnectRemote?.(endpoint.id) }]
+  }
   if (state.state !== 'connected') {
     return [{ label: '连接并打开', click: () => actions.connectAndOpen?.(endpoint.id) }]
   }

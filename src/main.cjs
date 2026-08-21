@@ -3,7 +3,7 @@ const { pathToFileURL } = require('node:url')
 const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell, Tray } = require('electron')
 const { DEFAULT_THEME, EndpointStore, SettingsStore } = require('./core/store.cjs')
 const { normalizeEndpoint, loopbackUrl } = require('./core/endpoint.cjs')
-const { TunnelManager } = require('./core/tunnel-manager.cjs')
+const { TunnelManager, endpointFingerprint } = require('./core/tunnel-manager.cjs')
 const { buildTrayMenuTemplate } = require('./core/tray-menu.cjs')
 const {
   LocalDshManager,
@@ -24,6 +24,7 @@ let closing = false
 let localDsh
 let endpointStore
 let settingsStore
+let endpointStoreWritable = true
 const tunnels = new TunnelManager()
 const indexFile = path.join(__dirname, 'renderer', 'index.html')
 const indexUrl = pathToFileURL(indexFile).toString()
@@ -53,6 +54,7 @@ function localEndpoint() {
 }
 
 function saveLocalEndpoint(endpointStore, port, name = localEndpoint()?.name ?? '本机 DSH') {
+  assertEndpointStoreWritable()
   const local = normalizeEndpoint({
     id: 'local-dsh',
     mode: 'local',
@@ -60,7 +62,17 @@ function saveLocalEndpoint(endpointStore, port, name = localEndpoint()?.name ?? 
     remotePort: port,
   })
   endpoints = endpointStore.save([local, ...endpoints.filter((entry) => entry.mode !== 'local')])
+  notifyEndpointsChanged()
   return local
+}
+
+function assertEndpointStoreWritable() {
+  if (!endpointStoreWritable) throw new Error('主机配置当前为只读，请先修复配置文件')
+}
+
+function notifyEndpointsChanged() {
+  sendToMainWindow('endpoints:changed', endpoints)
+  updateTrayMenu()
 }
 
 async function openLocalDsh(port) {
@@ -82,14 +94,16 @@ async function stopTunnel(id) {
 
 async function openEndpoint(id) {
   const endpoint = findEndpoint(id)
+  let url
   if (endpoint.mode === 'ssh') {
     const state = tunnels.get(id)
     if (state?.state !== 'connected') throw new Error('请先连接，再打开 DSH')
+    url = state.url
   } else {
     const state = await localDsh.inspect(endpoint.remotePort)
     if (state.state !== 'running') throw new Error('本机 DSH 尚未启动')
+    url = loopbackUrl(endpoint)
   }
-  const url = loopbackUrl(endpoint)
   await shell.openExternal(url)
   return url
 }
@@ -115,11 +129,11 @@ async function startLocalDsh() {
       ? await dialog.showMessageBox(mainWindow, options)
       : await dialog.showMessageBox(options)
     if (choice.response !== 0) return { cancelled: true, state: localDsh.getState() }
+    assertEndpointStoreWritable()
     port = suggestedPort
     state = await localDsh.start(port)
   }
-  saveLocalEndpoint(endpointStore, port)
-  updateTrayMenu()
+  if (localEndpoint()?.remotePort !== port) saveLocalEndpoint(endpointStore, port)
   return { cancelled: false, state }
 }
 
@@ -148,16 +162,21 @@ function registerIpc(endpointStore, settingsStore) {
     const normalized = normalizeEndpoint(input)
     if (normalized.mode !== 'ssh') throw new Error('本机 DSH 由启动按钮管理')
     const previous = endpoints.find((entry) => entry.id === normalized.id)
+    const running = tunnels.get(normalized.id)
+    if (previous && running?.active && endpointFingerprint(previous) !== endpointFingerprint(normalized)) {
+      throw new Error('请先断开连接，再修改连接设置')
+    }
     const ownsCurrentPort = previous?.mode === 'ssh'
       && previous.localPort === normalized.localPort
-      && tunnels.get(normalized.id)?.state === 'connected'
+      && running?.active
     if (!ownsCurrentPort && !(await isPortAvailable(normalized.localPort))) {
       throw new Error(`本地端口 ${normalized.localPort} 已被占用，请换一个端口`)
     }
     const next = endpoints.filter((entry) => entry.id !== normalized.id)
     next.push(normalized)
+    assertEndpointStoreWritable()
     endpoints = endpointStore.save(next)
-    updateTrayMenu()
+    notifyEndpointsChanged()
     return normalized
   })
 
@@ -166,8 +185,9 @@ function registerIpc(endpointStore, settingsStore) {
     const endpoint = findEndpoint(id)
     if (endpoint.mode === 'local') throw new Error('本机 DSH 固定显示，不能删除')
     await tunnels.stop(id)
+    assertEndpointStoreWritable()
     endpoints = endpointStore.save(endpoints.filter((entry) => entry.id !== id))
-    updateTrayMenu()
+    notifyEndpointsChanged()
     return true
   })
 
@@ -221,7 +241,6 @@ function registerIpc(endpointStore, settingsStore) {
     }
     saveLocalEndpoint(endpointStore, normalized.remotePort, normalized.name)
     await localDsh.inspect(normalized.remotePort)
-    updateTrayMenu()
     return normalized
   })
 
@@ -343,17 +362,20 @@ app.whenReady().then(async () => {
   endpointStore = new EndpointStore(path.join(app.getPath('userData'), 'endpoints.json'))
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'))
   localDsh = new LocalDshManager({ cwd: app.getPath('home') })
-  try {
-    endpoints = endpointStore.load()
-  } catch {
-    dialog.showErrorBox('DSH Tunnel', '无法读取主机配置。请检查配置文件的格式和权限。')
-    endpoints = []
+  const defaultLocal = normalizeEndpoint({
+    id: 'local-dsh',
+    mode: 'local',
+    name: '本机 DSH',
+    remotePort: 3080,
+  })
+  const endpointConfiguration = endpointStore.loadOrInitialize([defaultLocal])
+  endpoints = endpointConfiguration.entries
+  endpointStoreWritable = endpointConfiguration.status !== 'read-only'
+  if (endpointConfiguration.status === 'recovered') {
+    dialog.showErrorBox('DSH Tunnel', '主机配置已损坏。原文件已备份，并已恢复默认配置。')
+  } else if (!endpointStoreWritable) {
+    dialog.showErrorBox('DSH Tunnel', '无法安全读取或保存主机配置。当前将以只读模式运行。')
   }
-  saveLocalEndpoint(
-    endpointStore,
-    localEndpoint()?.remotePort ?? 3080,
-    localEndpoint()?.name ?? '本机 DSH',
-  )
   try {
     settings = settingsStore.load()
   } catch {
@@ -387,6 +409,13 @@ app.on('before-quit', (event) => {
   if (closing) return
   event.preventDefault()
   closing = true
-  const stopLocal = localDsh?.getState().owned ? localDsh.stop().catch(() => undefined) : Promise.resolve()
-  Promise.all([tunnels.stopAll(), stopLocal]).finally(() => app.quit())
+  const stopLocal = localDsh?.hasOwnedProcess() ? localDsh.stop() : Promise.resolve()
+  Promise.all([tunnels.stopAll(), stopLocal]).then(
+    () => app.quit(),
+    () => {
+      closing = false
+      showMainWindow()
+      dialog.showErrorBox('DSH Tunnel', '仍有连接或本机 DSH 未能停止，请重试。')
+    },
+  )
 })

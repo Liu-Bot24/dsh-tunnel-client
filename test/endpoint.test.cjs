@@ -25,7 +25,7 @@ test('normalizes a local endpoint without SSH fields', () => {
   }, { idFactory: () => 'local-1' })
 
   assert.deepEqual(endpoint, {
-    id: 'local-1',
+    id: 'local-dsh',
     name: 'Local DSH',
     mode: 'local',
     sshHost: null,
@@ -35,6 +35,17 @@ test('normalizes a local endpoint without SSH fields', () => {
     localPort: null,
   })
   assert.equal(loopbackUrl(endpoint), 'http://127.0.0.1:3080/')
+})
+
+test('reserves the fixed local endpoint id', () => {
+  assert.throws(
+    () => normalizeEndpoint({ id: 'local-dsh', name: 'Remote', sshHost: 'remote' }),
+    /保留/,
+  )
+  assert.throws(
+    () => normalizeEndpoint({ id: 'other-local', mode: 'local', name: 'Local', remotePort: 3080 }),
+    /标识不正确/,
+  )
 })
 
 test('rejects an unknown connection mode', () => {

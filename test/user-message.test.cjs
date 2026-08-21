@@ -16,3 +16,23 @@ test('does not expose an internal error merely because it is written in Chinese'
   const error = new Error("Error invoking remote method 'internal': 请求来源不受信任")
   assert.equal(userMessage(error, '操作失败'), '操作失败')
 })
+
+test('preserves safe messages that begin with SSH instead of truncating them', () => {
+  assert.equal(userMessage(new Error('SSH 认证失败')), 'SSH 认证失败')
+  assert.equal(userMessage(new Error('SSH 用户太长')), 'SSH 用户太长')
+})
+
+test('covers actual local DSH and port errors with and without an IPC wrapper', () => {
+  const messages = [
+    '本地端口 3080 已被其他程序占用',
+    'DSH 停止失败',
+    '请先断开连接，再修改连接设置',
+  ]
+  for (const message of messages) {
+    assert.equal(userMessage(new Error(message)), message)
+    assert.equal(
+      userMessage(new Error(`Error invoking remote method 'test': Error: ${message}`)),
+      message,
+    )
+  }
+})

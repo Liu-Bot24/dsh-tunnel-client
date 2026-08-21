@@ -53,6 +53,21 @@ test('remote actions follow tunnel state and preserve the endpoint id', () => {
   ])
 })
 
+test('offers retry actions when a live process failed to stop', () => {
+  const actions = {
+    stopLocal: () => {},
+    disconnectRemote: () => {},
+  }
+  const menu = buildTrayMenuTemplate({
+    endpoints: [local, remote],
+    localState: { state: 'error', owned: true },
+    tunnelStates: [{ endpointId: remote.id, state: 'error', active: true }],
+    actions,
+  })
+  assert.equal(menu[2].submenu[0].label, '重试停止')
+  assert.equal(menu[3].submenu[0].submenu[0].label, '重试断开')
+})
+
 test('desktop lifecycle keeps one tray instance and only hides the window on macOS', () => {
   const main = fs.readFileSync(path.resolve(__dirname, '../src/main.cjs'), 'utf8')
   assert.match(main, /app\.requestSingleInstanceLock\(\)/)

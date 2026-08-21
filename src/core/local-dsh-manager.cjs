@@ -42,11 +42,18 @@ class LocalDshManager extends EventEmitter {
     this.pollInterval = pollInterval
     this.terminateProcess = terminateProcess
     this.child = null
+    this.startPromise = null
+    this.startPort = null
+    this.startCancelled = false
     this.state = Object.freeze({ state: 'stopped', port: 3080, owned: false, error: null })
   }
 
   getState() {
     return this.state
+  }
+
+  hasOwnedProcess() {
+    return Boolean(this.child && !this.child.exited)
   }
 
   setState(next) {
@@ -56,8 +63,8 @@ class LocalDshManager extends EventEmitter {
   }
 
   async inspect(port = this.state.port) {
-    if (this.state.state === 'starting' || this.state.state === 'stopping') return this.state
-    if (this.child && this.state.state === 'running' && this.state.port === port) return this.state
+    if (this.startPromise || this.state.state === 'stopping') return this.state
+    if (this.hasOwnedProcess()) return this.state
     const result = await this.probe(port)
     if (result === 'dsh') return this.setState({ state: 'running', port, owned: false, error: null })
     if (result === 'occupied') {
@@ -66,13 +73,34 @@ class LocalDshManager extends EventEmitter {
     return this.setState({ state: 'stopped', port, owned: false, error: null })
   }
 
-  async start(port = 3080) {
-    if (this.state.state === 'starting' || this.state.state === 'stopping') {
-      throw new Error('本机 DSH 正在切换状态，请稍后再试')
+  start(port = 3080) {
+    if (this.startPromise) {
+      if (this.startPort === port) return this.startPromise
+      return Promise.reject(new Error('本机 DSH 正在使用另一个端口启动'))
     }
-    if (this.child && this.state.state === 'running') return this.state
+    if (this.state.state === 'stopping') {
+      return Promise.reject(new Error('本机 DSH 正在切换状态，请稍后再试'))
+    }
+    if (this.hasOwnedProcess()) {
+      if (this.state.state === 'running' && this.state.port === port) return Promise.resolve(this.state)
+      return Promise.reject(new Error('请先停止本机 DSH，再修改启动端口'))
+    }
 
+    this.startPort = port
+    this.startCancelled = false
+    this.startPromise = this.#startClaimed(port).finally(() => {
+      this.startPromise = null
+      this.startPort = null
+      this.startCancelled = false
+    })
+    return this.startPromise
+  }
+
+  async #startClaimed(port) {
     const existing = await this.probe(port)
+    if (this.startCancelled) {
+      return this.setState({ state: 'stopped', port, owned: false, error: null })
+    }
     if (existing === 'dsh') return this.setState({ state: 'running', port, owned: false, error: null })
     if (existing === 'occupied') throw new LocalPortOccupiedError(port)
 
@@ -87,74 +115,129 @@ class LocalDshManager extends EventEmitter {
         windowsHide: true,
       })
     } catch (error) {
-      const translated = error?.code === 'ENOENT' ? new DshNotInstalledError() : error
+      const translated = translateSpawnError(error)
       this.setState({ state: 'error', port, owned: false, error: translated.message || '无法启动 DSH' })
       throw translated
     }
-    this.child = child
 
-    const exitPromise = new Promise((_, reject) => {
-      child.once('error', (error) => {
-        if (this.child === child) this.child = null
-        const translated = error?.code === 'ENOENT' ? new DshNotInstalledError() : error
-        this.setState({ state: 'error', port, owned: false, error: translated.message || '无法启动 DSH' })
-        reject(translated)
-      })
-      child.once('exit', (code, signal) => {
-        if (this.child === child) this.child = null
-        if (this.state.state === 'stopping') return
-        this.setState({ state: 'error', port, owned: false, error: 'DSH 启动失败' })
-        reject(new Error(this.state.error))
-      })
-    })
+    const info = this.#trackChild(child, port)
+    this.child = info
+    this.setState({ state: 'starting', port, owned: true, error: null })
 
     try {
-      await Promise.race([
-        waitForDsh(this.probe, port, this.startupTimeout, this.pollInterval, () => this.child !== child),
-        exitPromise,
+      const outcome = await Promise.race([
+        waitForDsh(this.probe, port, this.startupTimeout, this.pollInterval, () => (
+          this.startCancelled || this.child !== info || info.exited
+        )).then(() => ({ type: 'ready' })),
+        info.exitPromise,
       ])
+      if (outcome.type === 'error') throw translateSpawnError(outcome.error)
+      if (outcome.type === 'exit') throw new Error('DSH 启动失败')
+      if (info.exited) throw new Error('DSH 启动失败')
+      if (this.startCancelled) throw new Error('DSH 启动已取消')
       return this.setState({ state: 'running', port, owned: true, error: null })
     } catch (error) {
-      if (this.child === child) {
-        child.kill()
-        this.child = null
+      if (!info.exited) {
+        info.intentional = true
+        try {
+          await this.#terminateOwnedChild(info)
+        } catch {
+          this.setState({ state: 'error', port, owned: true, error: 'DSH 停止失败' })
+          throw error
+        }
       }
-      if (this.state.state !== 'error') {
-        this.setState({ state: 'error', port, owned: false, error: 'DSH 启动超时' })
+      if (this.startCancelled) {
+        this.setState({ state: 'stopped', port, owned: false, error: null })
+      } else {
+        const translated = translateSpawnError(error)
+        this.setState({
+          state: 'error',
+          port,
+          owned: this.hasOwnedProcess(),
+          error: translated.message === 'DSH 启动超时' ? translated.message : (translated.message || 'DSH 启动失败'),
+        })
       }
       throw error
     }
+  }
+
+  #trackChild(child, port) {
+    const info = {
+      process: child,
+      exited: false,
+      intentional: false,
+      exitPromise: null,
+    }
+    info.exitPromise = new Promise((resolve) => {
+      child.once('error', (error) => {
+        if (child.pid == null) {
+          info.exited = true
+          if (this.child === info) this.child = null
+        }
+        resolve({ type: 'error', error })
+      })
+      child.once('exit', (code, signal) => {
+        info.exited = true
+        if (this.child === info) this.child = null
+        if (!info.intentional) {
+          this.setState({ state: 'error', port, owned: false, error: 'DSH 已停止' })
+        }
+        resolve({ type: 'exit', code, signal })
+      })
+    })
+    return info
   }
 
   async stop() {
+    if (this.startPromise) {
+      this.startCancelled = true
+      const starting = this.startPromise
+      const port = this.startPort ?? this.state.port
+      this.setState({ state: 'stopping', port, owned: this.hasOwnedProcess(), error: null })
+      try {
+        await starting
+      } catch {}
+      if (!this.hasOwnedProcess()) {
+        return this.setState({ state: 'stopped', port, owned: false, error: null })
+      }
+    }
     if (this.state.state === 'stopped') return this.state
-    if (!this.child || !this.state.owned) {
+    if (!this.hasOwnedProcess()) {
       throw new Error('无法停止：DSH 由其他程序启动')
     }
-    const child = this.child
+
+    const info = this.child
     const port = this.state.port
+    info.intentional = true
     this.setState({ state: 'stopping', port, owned: true, error: null })
     try {
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('DSH 进程未能退出')), this.shutdownTimeout)
-        child.once('exit', () => {
-          clearTimeout(timeout)
-          resolve()
-        })
-        Promise.resolve(this.terminateProcess(child)).catch((error) => {
-          clearTimeout(timeout)
-          reject(error)
-        })
-      })
+      await this.#terminateOwnedChild(info)
       await waitForDshStop(this.probe, port, this.shutdownTimeout, this.pollInterval)
     } catch (error) {
-      this.setState({ state: 'error', port, owned: false, error: 'DSH 停止失败' })
+      this.setState({
+        state: 'error',
+        port,
+        owned: Boolean(this.child === info && !info.exited),
+        error: 'DSH 停止失败',
+      })
       throw error
-    } finally {
-      if (this.child === child) this.child = null
     }
     return this.setState({ state: 'stopped', port, owned: false, error: null })
   }
+
+  async #terminateOwnedChild(info) {
+    await this.terminateProcess(info.process)
+    const outcome = await Promise.race([
+      info.exitPromise,
+      delay(this.shutdownTimeout).then(() => ({ type: 'timeout' })),
+    ])
+    if (outcome.type === 'timeout' && !info.exited) throw new Error('DSH 进程未能退出')
+    if (!info.exited) throw new Error('DSH 进程未能退出')
+  }
+}
+
+function translateSpawnError(error) {
+  return error?.code === 'ENOENT' ? new DshNotInstalledError() : error
 }
 
 function terminateChildProcess(child, {
@@ -183,13 +266,13 @@ function terminateChildProcess(child, {
   })
 }
 
-function resolveDshExecutable(platform = process.platform) {
+function resolveDshExecutable(platform = process.platform, existsSync = fs.existsSync) {
   const candidates = platform === 'darwin'
     ? ['/opt/homebrew/bin/dsh', '/usr/local/bin/dsh']
     : platform === 'win32'
-      ? ['dsh']
+      ? []
       : ['/usr/local/bin/dsh', '/usr/bin/dsh']
-  return candidates.find((candidate) => candidate.includes('/') && fs.existsSync(candidate)) ?? candidates.at(-1) ?? 'dsh'
+  return candidates.find((candidate) => existsSync(candidate)) ?? 'dsh'
 }
 
 function probeLocalService(port, { timeout = 800 } = {}) {
@@ -235,7 +318,7 @@ async function waitForDsh(probe, port, timeout, interval, cancelled = () => fals
   while (Date.now() < deadline) {
     if (cancelled()) throw new Error('DSH 启动已取消')
     if (await probe(port) === 'dsh') return
-    await new Promise((resolve) => setTimeout(resolve, interval))
+    await delay(interval)
   }
   throw new Error('DSH 启动超时')
 }
@@ -244,9 +327,13 @@ async function waitForDshStop(probe, port, timeout, interval) {
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) {
     if (await probe(port) === 'free') return
-    await new Promise((resolve) => setTimeout(resolve, interval))
+    await delay(interval)
   }
   throw new Error('DSH 端口仍在响应')
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 module.exports = {
