@@ -69,6 +69,20 @@ test('macOS package uses the custom whale icon', () => {
   assert.match(packager, /icon: path\.join\(projectDirectory, 'resources', 'app-icon\.icns'\)/)
 })
 
+test('macOS package creates and verifies a drag-to-Applications DMG', () => {
+  const script = fs.readFileSync(path.resolve(__dirname, '../scripts/package-mac.mjs'), 'utf8')
+  assert.match(script, /DSH\.Tunnel-\$\{packageJson\.version\}-macos-\$\{architecture\}/)
+  assert.match(script, /fs\.symlink\('\/Applications'/)
+  assert.match(script, /'create',[\s\S]*'-fs', 'HFS\+'/)
+  assert.match(script, /configureDmgWindow\(\)/)
+  assert.match(script, /'convert',[\s\S]*'-format', 'UDZO'/)
+  assert.match(script, /'verify', dmgPath/)
+  assert.match(script, /'attach',[\s\S]*'-readonly'/)
+  assert.match(script, /codesign[\s\S]*mountDirectory/)
+  assert.match(script, /sha256\(dmgPath\)/)
+  assert.match(script, /\.sha256/)
+})
+
 test('macOS package includes transparent menu bar template icons', () => {
   const oneX = fs.readFileSync(path.join(projectRoot, 'resources/trayTemplate.png'))
   const twoX = fs.readFileSync(path.join(projectRoot, 'resources/trayTemplate@2x.png'))
