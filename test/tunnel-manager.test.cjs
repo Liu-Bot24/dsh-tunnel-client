@@ -1,7 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { EventEmitter } = require('node:events')
-const { TunnelManager } = require('../src/core/tunnel-manager.cjs')
+const { TunnelManager, tunnelExitMessage } = require('../src/core/tunnel-manager.cjs')
 
 function fakeChild() {
   const child = new EventEmitter()
@@ -44,10 +44,10 @@ test('kills the SSH process when readiness fails', async () => {
   }
   const manager = new TunnelManager({
     spawnImpl: () => child,
-    waitForReady: async () => { throw new Error('DSH did not become ready') },
+    waitForReady: async () => { throw new Error('SSH 已连接，但 DSH 没有响应') },
     assertPortAvailable: async () => {},
   })
-  await assert.rejects(() => manager.start(endpoint), /did not become ready/)
+  await assert.rejects(() => manager.start(endpoint), /DSH 没有响应/)
   assert.equal(killed, true)
   assert.equal(manager.get('one').state, 'error')
 })
@@ -70,7 +70,7 @@ test('reports a spawn error immediately when OpenSSH cannot start', async () => 
     assertPortAvailable: async () => {},
   })
 
-  await assert.rejects(() => manager.start(endpoint), /Could not start SSH: spawn ssh ENOENT/)
+  await assert.rejects(() => manager.start(endpoint), /无法启动 SSH/)
   assert.equal(readyProbeFinished, false)
   assert.equal(manager.get('one').state, 'error')
 })
@@ -82,9 +82,34 @@ test('does not start SSH when the selected local port is already occupied', asyn
       spawnCalled = true
       return fakeChild()
     },
-    assertPortAvailable: async () => { throw new Error('Local port 13080 is unavailable') },
+    assertPortAvailable: async () => { throw new Error('本地端口 13080 已被占用，请换一个端口') },
   })
 
-  await assert.rejects(() => manager.start(endpoint), /Local port 13080 is unavailable/)
+  await assert.rejects(() => manager.start(endpoint), /本地端口 13080 已被占用/)
   assert.equal(spawnCalled, false)
+})
+
+test('does not start an SSH process for a local endpoint', async () => {
+  let spawnCalled = false
+  const manager = new TunnelManager({
+    spawnImpl: () => {
+      spawnCalled = true
+      return fakeChild()
+    },
+  })
+
+  await assert.rejects(() => manager.start({ mode: 'local', name: 'Local DSH' }), /不需要 SSH 隧道/)
+  assert.equal(spawnCalled, false)
+})
+
+test('turns an SSH authentication diagnostic into a safe user message', () => {
+  const message = tunnelExitMessage(255, null, 'remote-user@my-pc: Permission denied (publickey).')
+  assert.equal(message, 'SSH 认证失败')
+  assert.doesNotMatch(message, /remote-user|my-pc/)
+})
+
+test('does not expose an unknown SSH diagnostic', () => {
+  const message = tunnelExitMessage(255, null, 'unexpected internal diagnostic')
+  assert.equal(message, 'SSH 连接已结束')
+  assert.doesNotMatch(message, /internal diagnostic/)
 })

@@ -26,14 +26,14 @@ class EndpointStore {
       throw error
     }
     const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) throw new Error('endpoint store must contain an array')
+    if (!Array.isArray(parsed)) throw new Error('主机配置文件格式不正确')
     const endpoints = parsed.map((entry) => normalizeEndpoint(entry))
     assertUnique(endpoints)
     return endpoints
   }
 
   save(entries) {
-    if (!Array.isArray(entries)) throw new TypeError('entries must be an array')
+    if (!Array.isArray(entries)) throw new TypeError('主机列表格式不正确')
     const endpoints = entries.map((entry) => normalizeEndpoint(entry))
     assertUnique(endpoints)
     writeJson(this.filename, endpoints)
@@ -66,10 +66,10 @@ class SettingsStore {
 
 function normalizeSettings(input) {
   if (input === null || typeof input !== 'object' || Array.isArray(input)) {
-    throw new TypeError('settings must be an object')
+    throw new TypeError('设置格式不正确')
   }
   const theme = input.theme ?? DEFAULT_THEME
-  if (!SUPPORTED_THEMES.includes(theme)) throw new Error(`unsupported theme: ${theme}`)
+  if (!SUPPORTED_THEMES.includes(theme)) throw new Error('这个主题不可用')
   return { theme }
 }
 
@@ -85,10 +85,12 @@ function assertUnique(endpoints) {
   const ids = new Set()
   const ports = new Set()
   for (const endpoint of endpoints) {
-    if (ids.has(endpoint.id)) throw new Error(`duplicate endpoint id: ${endpoint.id}`)
-    if (ports.has(endpoint.localPort)) throw new Error(`local port ${endpoint.localPort} is already assigned`)
+    if (ids.has(endpoint.id)) throw new Error('主机标识重复')
+    if (endpoint.mode === 'ssh' && ports.has(endpoint.localPort)) {
+      throw new Error(`本地端口 ${endpoint.localPort} 已分配给其他主机`)
+    }
     ids.add(endpoint.id)
-    ports.add(endpoint.localPort)
+    if (endpoint.mode === 'ssh') ports.add(endpoint.localPort)
   }
 }
 

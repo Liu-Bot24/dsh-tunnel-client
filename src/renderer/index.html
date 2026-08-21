@@ -37,7 +37,7 @@
           </div>
           <section id="endpoint-list" class="endpoint-list" role="listbox" aria-label="DSH 主机"></section>
           <section id="sidebar-empty" class="sidebar-empty hidden">
-            <p>还没有主机</p>
+            <p>还没有添加主机</p>
             <button id="empty-add-endpoint" class="text-control" type="button">添加主机</button>
           </section>
         </aside>
@@ -46,8 +46,8 @@
           <section id="notice" class="notice hidden" role="status"></section>
           <section id="empty-state" class="empty-state hidden">
             <div class="empty-mark">＋</div>
-            <h1>添加一台 DSH 主机</h1>
-            <p>填写 SSH 主机和端口转发信息。</p>
+            <h1>连接一台 DSH 主机</h1>
+            <p>通过 SSH 访问目标电脑上的 DSH。</p>
             <button id="detail-add-endpoint" class="button primary" type="button">添加主机</button>
           </section>
 
@@ -78,18 +78,18 @@
               <section class="detail-group">
                 <h2>连接</h2>
                 <dl>
-                  <div><dt>SSH</dt><dd id="detail-ssh"></dd></div>
-                  <div><dt>认证</dt><dd>系统 OpenSSH</dd></div>
+                  <div><dt>方式</dt><dd id="detail-method"></dd></div>
+                  <div><dt id="detail-target-label">SSH</dt><dd id="detail-ssh"></dd></div>
                 </dl>
               </section>
-              <section class="detail-group">
+              <section id="tunnel-detail" class="detail-group">
                 <h2>端口转发</h2>
                 <dl>
                   <div><dt>本机</dt><dd id="detail-local"></dd></div>
                   <div><dt>远端</dt><dd id="detail-remote"></dd></div>
                 </dl>
               </section>
-              <section class="route-strip" aria-label="端口转发路径">
+              <section id="route-strip" class="route-strip" aria-label="端口转发路径">
                 <div><span>本机浏览器</span><code id="route-local"></code></div>
                 <div class="route-line"><i></i><span>SSH</span><i></i></div>
                 <div><span>远端 DSH</span><code id="route-remote"></code></div>
@@ -99,7 +99,7 @@
 
             <footer class="detail-actions">
               <button id="edit-endpoint" class="button secondary" type="button">编辑</button>
-              <button id="stop-tunnel" class="button secondary" type="button">停止</button>
+              <button id="stop-tunnel" class="button secondary" type="button">断开</button>
               <button id="primary-endpoint-action" class="button primary" type="button">连接并打开</button>
             </footer>
           </article>
@@ -111,25 +111,50 @@
       <form id="endpoint-form">
         <div class="dialog-heading">
           <div>
-            <p class="dialog-kicker">主机</p>
-            <h2 id="dialog-title">添加 DSH 主机</h2>
+            <h2 id="dialog-title">添加主机</h2>
           </div>
           <button id="close-dialog" class="icon-control" aria-label="关闭" type="button">×</button>
         </div>
         <input id="endpoint-id" type="hidden">
-        <label>显示名称<input id="endpoint-name" required maxlength="80"></label>
-        <label>SSH 主机或 config 别名<input id="ssh-host" required maxlength="255"></label>
-        <div class="field-row">
-          <label>SSH 用户（可选）<input id="ssh-user" maxlength="80"></label>
-          <label>SSH 端口（可选）<input id="ssh-port" inputmode="numeric" min="1" max="65535" placeholder="使用 SSH config"></label>
+        <input id="endpoint-mode" type="hidden" value="ssh">
+        <label>
+          <span>显示名称</span>
+          <input id="endpoint-name" required maxlength="80" placeholder="例如：工作电脑" autocomplete="off">
+          <small class="field-note">仅用于本机识别。</small>
+        </label>
+        <div id="ssh-fields" class="ssh-fields">
+          <label>
+            <span>SSH 地址</span>
+            <input id="ssh-host" required maxlength="255" placeholder="IP 地址或域名" autocomplete="off" spellcheck="false">
+            <small class="field-note">也可使用 SSH 配置中的别名。</small>
+          </label>
+          <div class="field-row">
+            <label>
+              <span>SSH 用户（可选）</span>
+              <input id="ssh-user" maxlength="80" placeholder="可不填" autocomplete="off" spellcheck="false">
+              <small class="field-note">留空时使用 SSH 默认值。</small>
+            </label>
+            <label>
+              <span>SSH 端口（可选）</span>
+              <input id="ssh-port" inputmode="numeric" min="1" max="65535" placeholder="22">
+              <small class="field-note">留空则使用 SSH 配置或 22。</small>
+            </label>
+          </div>
         </div>
-        <div class="field-row">
-          <label>远端 DSH 端口<input id="remote-port" required inputmode="numeric" min="1" max="65535" value="3080"></label>
-          <label>本地端口<input id="local-port" required inputmode="numeric" min="1" max="65535" value="13080"></label>
+        <div id="ports-row" class="field-row">
+          <label id="dsh-port-field">
+            <span id="dsh-port-label">DSH 端口</span>
+            <input id="remote-port" required inputmode="numeric" min="1" max="65535" value="3080">
+            <small id="dsh-port-note" class="field-note">SSH 目标侧可访问的 DSH 端口。</small>
+          </label>
+          <label id="local-port-field">
+            <span>本地端口</span>
+            <input id="local-port" required inputmode="numeric" min="1" max="65535" value="13080">
+            <small class="field-note">本机浏览器访问 DSH 时使用的端口。</small>
+          </label>
         </div>
-        <p class="form-hint">使用系统 OpenSSH、SSH config 和 SSH Agent。客户端不保存密码。</p>
         <div class="dialog-actions split-actions">
-          <button id="delete-endpoint" class="button danger hidden" type="button">移除主机</button>
+          <button id="delete-endpoint" class="button danger hidden" type="button">删除主机</button>
           <span></span>
           <button id="cancel-dialog" class="button secondary" type="button">取消</button>
           <button id="save-endpoint" class="button primary" value="default" type="submit">保存</button>
@@ -141,8 +166,7 @@
       <form id="settings-form">
         <div class="dialog-heading">
           <div>
-            <p class="dialog-kicker">设置</p>
-            <h2>界面主题</h2>
+            <h2>主题</h2>
           </div>
           <button id="close-settings" class="icon-control" aria-label="关闭" type="button">×</button>
         </div>
@@ -151,27 +175,27 @@
           <label class="theme-option">
             <input type="radio" name="theme" value="whale-song">
             <span class="theme-preview whale-preview"><i></i><i></i><i></i></span>
-            <span><strong>深海鲸歌</strong><small>深蓝、鲸影、冷光</small></span>
+            <span><strong>深海鲸歌</strong><small>深蓝背景与鲸影</small></span>
           </label>
           <label class="theme-option">
             <input type="radio" name="theme" value="nautical-chart">
             <span class="theme-preview nautical-preview"><i></i><i></i><i></i></span>
-            <span><strong>航海图纸</strong><small>纸张、海图、经纬</small></span>
+            <span><strong>航海图纸</strong><small>暖色纸张与海图网格</small></span>
           </label>
           <label class="theme-option">
             <input type="radio" name="theme" value="phosphor">
             <span class="theme-preview phosphor-preview"><i></i><i></i><i></i></span>
-            <span><strong>夜视终端</strong><small>黑场、荧光、等宽</small></span>
+            <span><strong>夜视终端</strong><small>黑底与荧光绿</small></span>
           </label>
           <label class="theme-option">
             <input type="radio" name="theme" value="bauhaus-signal">
             <span class="theme-preview signal-preview"><i></i><i></i><i></i></span>
-            <span><strong>包豪斯信号</strong><small>原色、几何、强分区</small></span>
+            <span><strong>包豪斯信号</strong><small>原色与几何分区</small></span>
           </label>
           <label class="theme-option">
             <input type="radio" name="theme" value="soft-porcelain">
             <span class="theme-preview porcelain-preview"><i></i><i></i><i></i></span>
-            <span><strong>柔雾器物</strong><small>淡紫、陶瓷、轻鲸影</small></span>
+            <span><strong>柔雾器物</strong><small>浅色陶瓷质感</small></span>
           </label>
         </fieldset>
         <div class="dialog-actions">
@@ -181,6 +205,7 @@
       </form>
     </dialog>
 
+    <script src="./user-message.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

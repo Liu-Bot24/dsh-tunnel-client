@@ -17,3 +17,7 @@ test('builds a non-interactive local-forward command without a shell', () => {
   assert.ok(args.includes('ExitOnForwardFailure=yes'))
   assert.equal(args.includes('ClearAllForwardings=yes'), false)
 })
+
+test('does not build SSH arguments for a local endpoint', () => {
+  assert.throws(() => buildSshArgs({ mode: 'local', name: 'Local DSH' }), /不需要 SSH 参数/)
+})

@@ -14,18 +14,14 @@ async function waitForHttp(url, {
   intervalMs = 200,
 } = {}) {
   const deadline = Date.now() + timeoutMs
-  let lastError
   while (Date.now() < deadline) {
     try {
       const response = await fetchImpl(url, { signal: AbortSignal.timeout(1_000), redirect: 'manual' })
       if (response.ok) return
-      lastError = new Error(`DSH returned HTTP ${response.status}`)
-    } catch (error) {
-      lastError = error
-    }
+    } catch {}
     await delay(intervalMs)
   }
-  throw new Error(`DSH did not become ready: ${lastError?.message ?? 'timeout'}`)
+  throw new Error('DSH 没有响应')
 }
 
 function assertLocalPortAvailable(port) {
@@ -33,11 +29,11 @@ function assertLocalPortAvailable(port) {
     const server = net.createServer()
     server.unref()
     server.once('error', (error) => {
-      reject(new Error(`Local port ${port} is unavailable: ${error.message}`))
+      reject(new Error(`本地端口 ${port} 已被占用，请换一个端口`))
     })
     server.listen({ host: '127.0.0.1', port, exclusive: true }, () => {
       server.close((error) => {
-        if (error) reject(new Error(`Could not release local port ${port}: ${error.message}`))
+        if (error) reject(new Error(`无法释放本地端口 ${port}`))
         else resolve()
       })
     })
@@ -70,6 +66,7 @@ class TunnelManager extends EventEmitter {
 
   async start(input) {
     const endpoint = normalizeEndpoint(input)
+    if (endpoint.mode !== 'ssh') throw new Error('本机直连不需要 SSH 隧道')
     const existing = this.records.get(endpoint.id)
     if (existing && (existing.state === 'starting' || existing.state === 'connected')) {
       return this.#view(existing)
@@ -107,7 +104,7 @@ class TunnelManager extends EventEmitter {
       child.once('error', (error) => {
         record.exited = child.pid == null
         record.state = 'error'
-        record.error = `Could not start SSH: ${error.message}`
+        record.error = '无法启动 SSH'
         this.#emit(record)
         resolve({ type: 'error', error })
       })
@@ -147,7 +144,7 @@ class TunnelManager extends EventEmitter {
     for (let index = 0; index < 20 && !record.exited; index += 1) await delay(50)
     if (!record.exited) {
       record.state = 'error'
-      record.error = 'SSH process did not stop'
+      record.error = 'SSH 断开失败'
       this.#emit(record)
     }
     return this.#view(record)
@@ -173,8 +170,17 @@ class TunnelManager extends EventEmitter {
 }
 
 function tunnelExitMessage(code, signal, stderr) {
-  const detail = stderr.trim().split('\n').slice(-2).join(' ') || 'no SSH diagnostic'
-  return `SSH tunnel exited (${signal ?? code ?? 'unknown'}): ${detail}`
+  const diagnostic = stderr.toLowerCase()
+  if (diagnostic.includes('permission denied')) return 'SSH 认证失败'
+  if (diagnostic.includes('could not resolve hostname')) return '找不到 SSH 主机'
+  if (diagnostic.includes('connection refused')) return 'SSH 连接被拒绝'
+  if (diagnostic.includes('host key verification failed')) return 'SSH 主机密钥未确认'
+  if (diagnostic.includes('timed out') || diagnostic.includes('no route to host')) {
+    return 'SSH 主机不可达'
+  }
+  if (signal) return 'SSH 连接已中断'
+  if (Number.isInteger(code)) return 'SSH 连接已结束'
+  return 'SSH 连接已结束'
 }
 
 module.exports = { TunnelManager, waitForHttp, assertLocalPortAvailable, tunnelExitMessage }

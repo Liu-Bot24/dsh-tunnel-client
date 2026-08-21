@@ -1,7 +1,7 @@
 :root {
   color-scheme: dark;
-  --app-font: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --mono-font: "SFMono-Regular", Menlo, Consolas, monospace;
+  --app-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", sans-serif;
+  --mono-font: "SFMono-Regular", Menlo, Consolas, "PingFang SC", monospace;
   --app-bg: #061923;
   --toolbar-bg: #071b27;
   --sidebar-bg: #081f2c;
@@ -30,18 +30,18 @@
 
 html[data-theme="nautical-chart"] {
   color-scheme: light;
-  --app-font: "Avenir Next", Avenir, -apple-system, BlinkMacSystemFont, sans-serif;
+  --app-font: "Avenir Next", Avenir, "PingFang SC", -apple-system, BlinkMacSystemFont, sans-serif;
   --app-bg: #dfe4d8;
   --toolbar-bg: #ece5cf;
-  --sidebar-bg: rgba(225, 232, 219, .94);
+  --sidebar-bg: #e1e8db;
   --detail-bg: #f7f3e4;
   --surface-bg: rgba(249, 246, 232, .94);
   --surface-strong: #e8eadb;
   --border-color: #6e858b;
   --border-strong: #1d4050;
   --text-color: #173746;
-  --muted-color: #667b7d;
-  --subtle-color: #889594;
+  --muted-color: #52676b;
+  --subtle-color: #748786;
   --accent-color: #b54b3b;
   --accent-text: #fff8e9;
   --success-color: #b54b3b;
@@ -59,8 +59,8 @@ html[data-theme="nautical-chart"] {
 
 html[data-theme="phosphor"] {
   color-scheme: dark;
-  --app-font: "SFMono-Regular", Menlo, Consolas, monospace;
-  --mono-font: "SFMono-Regular", Menlo, Consolas, monospace;
+  --app-font: "SFMono-Regular", Menlo, Consolas, "PingFang SC", monospace;
+  --mono-font: "SFMono-Regular", Menlo, Consolas, "PingFang SC", monospace;
   --app-bg: #050806;
   --toolbar-bg: #070b08;
   --sidebar-bg: #08100b;
@@ -89,7 +89,7 @@ html[data-theme="phosphor"] {
 
 html[data-theme="bauhaus-signal"] {
   color-scheme: light;
-  --app-font: Helvetica, Arial, sans-serif;
+  --app-font: "Helvetica Neue", Helvetica, Arial, "PingFang SC", sans-serif;
   --app-bg: #dad5c3;
   --toolbar-bg: #f1eedf;
   --sidebar-bg: #1554d1;
@@ -118,7 +118,7 @@ html[data-theme="bauhaus-signal"] {
 
 html[data-theme="soft-porcelain"] {
   color-scheme: light;
-  --app-font: "Avenir Next", Avenir, -apple-system, BlinkMacSystemFont, sans-serif;
+  --app-font: "Avenir Next", Avenir, "PingFang SC", -apple-system, BlinkMacSystemFont, sans-serif;
   --app-bg: #ece9f2;
   --toolbar-bg: #f5f3f9;
   --sidebar-bg: #eeeaf5;
@@ -128,8 +128,8 @@ html[data-theme="soft-porcelain"] {
   --border-color: #ded8e8;
   --border-strong: #c9c0da;
   --text-color: #353149;
-  --muted-color: #817a92;
-  --subtle-color: #aaa4b6;
+  --muted-color: #6b637b;
+  --subtle-color: #948ca2;
   --accent-color: #6f6192;
   --accent-text: #ffffff;
   --success-color: #5fa78e;
@@ -153,6 +153,8 @@ body {
   background: var(--app-bg);
   color: var(--text-color);
   font-family: var(--app-font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   transition: background-color .18s ease, color .18s ease;
 }
 button, input { font: inherit; }
@@ -200,7 +202,7 @@ button:focus-visible, input:focus-visible, .theme-option:has(input:focus-visible
 }
 .icon-control svg { width: 16px; height: 16px; fill: currentColor; }
 .toolbar-add { min-height: 32px; padding-inline: 12px; }
-.toolbar-add span { margin-right: 4px; font-size: 16px; line-height: 0; }
+.toolbar-add > span:first-child { margin-right: 4px; font-size: 16px; line-height: 0; }
 
 .workspace {
   display: grid;
@@ -249,6 +251,7 @@ button:focus-visible, input:focus-visible, .theme-option:has(input:focus-visible
 .endpoint-row-meta { display: block; margin-top: 6px; overflow: hidden; color: var(--muted-color); font: 10px/1.3 var(--mono-font); text-overflow: ellipsis; white-space: nowrap; }
 .status-dot { display: block; width: 8px; height: 8px; border-radius: 50%; background: var(--subtle-color); }
 .status-dot.connected { background: var(--success-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success-color) 18%, transparent); }
+.status-dot.local { background: var(--accent-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 18%, transparent); }
 .status-dot.starting, .status-dot.stopping { background: #e1a13c; }
 .status-dot.error { background: var(--danger-color); }
 .sidebar-empty { margin: 30px 8px; color: var(--muted-color); font-size: 12px; text-align: center; }
@@ -315,6 +318,7 @@ button:focus-visible, input:focus-visible, .theme-option:has(input:focus-visible
 .status { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; font-size: 11px; font-weight: 780; }
 .status i { display: block; width: 8px; height: 8px; border-radius: 50%; background: var(--subtle-color); }
 .status.connected i { background: var(--success-color); box-shadow: 0 0 0 4px color-mix(in srgb, var(--success-color) 15%, transparent); }
+.status.local i { background: var(--accent-color); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-color) 15%, transparent); }
 .status.starting i, .status.stopping i { background: #e1a13c; }
 .status.error i { background: var(--danger-color); }
 .detail-content {
@@ -407,6 +411,7 @@ dialog {
 }
 dialog::backdrop { background: rgba(2, 8, 12, .62); backdrop-filter: blur(5px); }
 #endpoint-form, #settings-form { display: grid; gap: 18px; padding: 24px; }
+#endpoint-form { gap: 14px; }
 .dialog-heading { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
 .dialog-heading h2 { margin: 0; font-size: 24px; letter-spacing: -.025em; }
 .dialog-kicker { margin: 0 0 6px; color: var(--accent-color); font-size: 9px; font-weight: 820; letter-spacing: .12em; text-transform: uppercase; }
@@ -421,8 +426,16 @@ input {
   color: var(--text-color);
 }
 input:focus { border-color: var(--accent-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-color) 15%, transparent); }
+.field-note {
+  min-height: 13px;
+  color: var(--muted-color);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.4;
+}
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
-.form-hint { margin: 0; color: var(--muted-color); font-size: 11px; line-height: 1.55; }
+.field-row.single-field { grid-template-columns: 1fr; }
+.ssh-fields { display: grid; gap: 14px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 2px; }
 .split-actions { display: grid; grid-template-columns: auto 1fr auto auto; }
 
@@ -475,7 +488,7 @@ html[data-theme="nautical-chart"] .endpoint-sidebar, html[data-theme="nautical-c
   background-image: linear-gradient(rgba(29,64,80,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(29,64,80,.07) 1px, transparent 1px);
   background-size: 28px 28px;
 }
-html[data-theme="nautical-chart"] .detail-heading h1, html[data-theme="nautical-chart"] .dialog-heading h2 { font-family: Georgia, "Songti SC", serif; font-weight: 500; }
+html[data-theme="nautical-chart"] .detail-heading h1, html[data-theme="nautical-chart"] .dialog-heading h2 { font-family: "New York", "Songti SC", STSong, Georgia, serif; font-weight: 600; letter-spacing: -.025em; }
 html[data-theme="nautical-chart"] .compass-decoration { display: block; right: 26px; bottom: 40px; width: 190px; fill: none; stroke: var(--border-strong); stroke-width: 1; opacity: .09; }
 html[data-theme="nautical-chart"] .endpoint-row[aria-selected="true"], html[data-theme="nautical-chart"] .button { box-shadow: 3px 3px 0 var(--border-strong); }
 html[data-theme="nautical-chart"] .detail-group { border-color: var(--border-strong); box-shadow: none; }
@@ -499,8 +512,10 @@ html[data-theme="phosphor"] .button { text-transform: lowercase; }
 html[data-theme="bauhaus-signal"] .app-shell { border: 3px solid var(--border-strong); }
 html[data-theme="bauhaus-signal"] .app-toolbar { border-bottom-width: 3px; }
 html[data-theme="bauhaus-signal"] .endpoint-sidebar { border-right: 3px solid var(--border-strong); color: #ffffff; }
-html[data-theme="bauhaus-signal"] .sidebar-heading span, html[data-theme="bauhaus-signal"] .sidebar-empty { color: rgba(255,255,255,.72); }
+html[data-theme="bauhaus-signal"] .sidebar-heading span, html[data-theme="bauhaus-signal"] .sidebar-empty { color: rgba(255,255,255,.88); }
 html[data-theme="bauhaus-signal"] .endpoint-row { color: #ffffff; }
+html[data-theme="bauhaus-signal"] .endpoint-row:not([aria-selected="true"]) .endpoint-row-meta { color: rgba(255,255,255,.82); }
+html[data-theme="bauhaus-signal"] .endpoint-row:not([aria-selected="true"]) .status-dot { background: rgba(255,255,255,.62); }
 html[data-theme="bauhaus-signal"] .endpoint-row[aria-selected="true"] { color: #111111; box-shadow: 5px 5px 0 #151515; }
 html[data-theme="bauhaus-signal"] .detail-heading h1 { font-weight: 900; text-transform: uppercase; }
 html[data-theme="bauhaus-signal"] .detail-group { border: 2px solid var(--border-strong); box-shadow: none; }

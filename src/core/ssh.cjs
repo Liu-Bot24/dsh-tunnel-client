@@ -6,6 +6,7 @@ function sshTarget(endpoint) {
 
 function buildSshArgs(input) {
   const endpoint = normalizeEndpoint(input)
+  if (endpoint.mode !== 'ssh') throw new Error('本机直连不需要 SSH 参数')
   const args = [
     '-N',
     '-T',
