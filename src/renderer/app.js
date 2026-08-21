@@ -22,6 +22,8 @@ const detailElement = document.querySelector('#endpoint-detail')
 const noticeElement = document.querySelector('#notice')
 const endpointDialog = document.querySelector('#endpoint-dialog')
 const endpointForm = document.querySelector('#endpoint-form')
+const pairingDialog = document.querySelector('#pairing-dialog')
+const pairingForm = document.querySelector('#pairing-form')
 const settingsDialog = document.querySelector('#settings-dialog')
 const settingsForm = document.querySelector('#settings-form')
 const deleteButton = document.querySelector('#delete-endpoint')
@@ -59,12 +61,22 @@ const routeStripElement = document.querySelector('#route-strip')
 const primaryActionButton = document.querySelector('#primary-endpoint-action')
 const stopButton = document.querySelector('#stop-tunnel')
 const editButton = document.querySelector('#edit-endpoint')
+const pairingFields = {
+  title: document.querySelector('#pairing-title'),
+  target: document.querySelector('#pairing-target'),
+  keyType: document.querySelector('#pairing-key-type'),
+  fingerprint: document.querySelector('#pairing-fingerprint'),
+  password: document.querySelector('#pairing-password'),
+  error: document.querySelector('#pairing-error'),
+  confirm: document.querySelector('#confirm-pairing'),
+}
 
 let endpoints = []
 let selectedEndpointId = null
 let settings = { theme: 'whale-song' }
 let settingsCommitted = false
 let noticeTimer = null
+let pendingPairing = null
 let localDshState = { state: 'stopped', port: 3080, owned: false, error: null }
 const tunnelStates = new Map()
 
@@ -219,15 +231,58 @@ async function refresh() {
   render()
 }
 
-async function connectAndOpen(id) {
+function closePairing() {
+  pairingDialog.close()
+}
+
+function openPairing(endpoint, inspection) {
+  pendingPairing = { endpointId: endpoint.id, fingerprint: inspection.fingerprint }
+  pairingFields.title.textContent = `连接“${endpoint.name}”`
+  pairingFields.target.textContent = inspection.target
+  pairingFields.keyType.textContent = `${inspection.keyType} 主机指纹`
+  pairingFields.fingerprint.textContent = inspection.fingerprint
+  pairingFields.password.value = ''
+  pairingFields.error.textContent = ''
+  pairingFields.error.classList.add('hidden')
+  pairingFields.confirm.disabled = false
+  pairingFields.confirm.textContent = '确认并连接'
+  pairingDialog.showModal()
+  pairingFields.password.focus()
+}
+
+async function inspectPairing(endpoint) {
+  const inspection = await window.dshTunnel.inspectSshPairing(endpoint.id)
+  if (inspection.requiresPairing) {
+    openPairing(endpoint, inspection)
+    return true
+  }
+  return false
+}
+
+async function connectAndOpen(id, { skipPairingCheck = false } = {}) {
   clearNotice()
+  const endpoint = endpoints.find((entry) => entry.id === id)
   try {
+    if (!skipPairingCheck && endpoint && await inspectPairing(endpoint)) return
     const state = await window.dshTunnel.startTunnel(id)
     tunnelStates.set(id, state)
     render()
     await window.dshTunnel.openEndpoint(id)
   } catch (error) {
-    showNotice(userMessage(error, '连接失败'))
+    const message = userMessage(error, '连接失败')
+    const mayNeedPairing = endpoint && [
+      '连接失败',
+      'SSH 认证失败',
+      'SSH 主机密钥未确认',
+      'SSH 连接已结束',
+    ].includes(message)
+    if (mayNeedPairing) {
+      try {
+        openPairing(endpoint, await window.dshTunnel.inspectSshPairing(id))
+        return
+      } catch {}
+    }
+    showNotice(message)
   }
 }
 
@@ -360,6 +415,8 @@ for (const id of ['empty-add-endpoint', 'detail-add-endpoint']) {
 document.querySelector('#open-settings').addEventListener('click', openSettings)
 document.querySelector('#close-dialog').addEventListener('click', () => endpointDialog.close())
 document.querySelector('#cancel-dialog').addEventListener('click', () => endpointDialog.close())
+document.querySelector('#close-pairing').addEventListener('click', closePairing)
+document.querySelector('#cancel-pairing').addEventListener('click', closePairing)
 document.querySelector('#close-settings').addEventListener('click', cancelSettings)
 document.querySelector('#cancel-settings').addEventListener('click', cancelSettings)
 
@@ -409,6 +466,40 @@ endpointForm.addEventListener('submit', async (event) => {
   } catch (error) {
     showNotice(userMessage(error, '保存失败'))
   }
+})
+
+pairingForm.addEventListener('submit', async (event) => {
+  event.preventDefault()
+  if (!pendingPairing) return
+  pairingFields.error.textContent = ''
+  pairingFields.error.classList.add('hidden')
+  pairingFields.confirm.disabled = true
+  pairingFields.confirm.textContent = '正在配对…'
+  const endpointId = pendingPairing.endpointId
+  try {
+    await window.dshTunnel.pairSshHost({
+      endpointId,
+      password: pairingFields.password.value,
+      approvedFingerprint: pendingPairing.fingerprint,
+    })
+    closePairing()
+    showNotice('SSH 配对完成', 'success')
+    await connectAndOpen(endpointId, { skipPairingCheck: true })
+  } catch (error) {
+    pairingFields.error.textContent = userMessage(error, 'SSH 配对失败')
+    pairingFields.error.classList.remove('hidden')
+  } finally {
+    pairingFields.password.value = ''
+    pairingFields.confirm.disabled = false
+    pairingFields.confirm.textContent = '确认并连接'
+  }
+})
+
+pairingDialog.addEventListener('close', () => {
+  pairingFields.password.value = ''
+  pairingFields.error.textContent = ''
+  pairingFields.error.classList.add('hidden')
+  pendingPairing = null
 })
 
 settingsForm.addEventListener('change', (event) => {

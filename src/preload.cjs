@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('dshTunnel', Object.freeze({
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   startTunnel: (id) => ipcRenderer.invoke('tunnels:start', id),
   stopTunnel: (id) => ipcRenderer.invoke('tunnels:stop', id),
+  inspectSshPairing: (id) => ipcRenderer.invoke('ssh-pairing:inspect', id),
+  pairSshHost: (input) => ipcRenderer.invoke('ssh-pairing:pair', input),
   openEndpoint: (id) => ipcRenderer.invoke('endpoints:open', id),
   startLocalDsh: () => ipcRenderer.invoke('local-dsh:start'),
   saveLocalDsh: (endpoint) => ipcRenderer.invoke('local-dsh:save', endpoint),

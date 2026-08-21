@@ -20,6 +20,8 @@ test('does not expose an internal error merely because it is written in Chinese'
 test('preserves safe messages that begin with SSH instead of truncating them', () => {
   assert.equal(userMessage(new Error('SSH 认证失败')), 'SSH 认证失败')
   assert.equal(userMessage(new Error('SSH 用户太长')), 'SSH 用户太长')
+  assert.equal(userMessage(new Error('无法解析 SSH 主机配置')), '无法解析 SSH 主机配置')
+  assert.equal(userMessage(new Error('读取 SSH 主机配置超时')), '读取 SSH 主机配置超时')
 })
 
 test('covers actual local DSH and port errors with and without an IPC wrapper', () => {

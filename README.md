@@ -4,7 +4,7 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-![Stars](https://img.shields.io/github/stars/Liu-Bot24/dsh-tunnel-client?style=flat&label=Stars) ![Forks](https://img.shields.io/github/forks/Liu-Bot24/dsh-tunnel-client?style=flat&label=Forks) ![Views 14d](https://github-stats.liu-qi.cn/api/badge/Liu-Bot24/dsh-tunnel-client/views14d.svg?v=4) ![Clones 14d](https://github-stats.liu-qi.cn/api/badge/Liu-Bot24/dsh-tunnel-client/clones14d.svg?v=4) ![Version](https://img.shields.io/badge/version-0.1.0-68ded5) ![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-173746?logo=apple&logoColor=white) ![Windows](https://img.shields.io/badge/Windows-x64-1554d1?logo=windows11&logoColor=white) ![License](https://img.shields.io/badge/license-MIT-b54b3b)
+![Stars](https://img.shields.io/github/stars/Liu-Bot24/dsh-tunnel-client?style=flat&label=Stars) ![Forks](https://img.shields.io/github/forks/Liu-Bot24/dsh-tunnel-client?style=flat&label=Forks) ![Views 14d](https://github-stats.liu-qi.cn/api/badge/Liu-Bot24/dsh-tunnel-client/views14d.svg?v=4) ![Clones 14d](https://github-stats.liu-qi.cn/api/badge/Liu-Bot24/dsh-tunnel-client/clones14d.svg?v=4) ![Version](https://img.shields.io/badge/version-0.1.1-68ded5) ![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-173746?logo=apple&logoColor=white) ![Windows](https://img.shields.io/badge/Windows-x64-1554d1?logo=windows11&logoColor=white) ![License](https://img.shields.io/badge/license-MIT-b54b3b)
 
 用于启动本机 DeepSeek Harness（DSH），并通过系统 OpenSSH 安全连接远程 DSH 的桌面工具。
 
@@ -40,7 +40,7 @@ DSH Tunnel 可以启动本机 DSH，也可以为远程 DSH 建立本地 SSH 隧�
 - 在连接可用后自动打开默认浏览器
 - 通过 macOS 菜单栏或 Windows 系统托盘快速操作
 - 提供深海鲸歌、航海图纸、夜视终端、包豪斯信号和柔雾器物五套主题
-- 使用系统 SSH 配置、密钥和 SSH Agent，不保存密码或私钥
+- 使用系统 SSH 配置、密钥和 SSH Agent；首次连接可在界面核对指纹并生成应用专用密钥
 
 ## 支持平台
 
@@ -65,9 +65,9 @@ shasum -a 256 -c DSH.Tunnel-<版本>-macos-arm64.dmg.sha256
 
 ### Windows
 
-1. 下载 `DSH-Tunnel-Setup-<版本>-x64.exe`。
-2. 运行安装程序，并按向导完成安装。
-3. 从开始菜单或桌面快捷方式打开 DSH Tunnel。
+1. 下载 `DSH-Tunnel-Setup-<版本>-x64.exe`，运行安装程序并按向导完成安装。
+2. 也可以下载 `DSH-Tunnel-Portable-<版本>-x64.exe`，无需安装即可运行。
+3. 从开始菜单、桌面快捷方式或便携版文件打开 DSH Tunnel。
 
 当前 Windows 安装包尚未使用受信任的代码签名证书，系统可能显示“未知发布者”提示。
 
@@ -75,10 +75,10 @@ shasum -a 256 -c DSH.Tunnel-<版本>-macos-arm64.dmg.sha256
 
 - 系统中存在可用的 OpenSSH 客户端
 - 如需由客户端启动本机 DSH，`dsh` 命令必须已安装并可运行
-- 远程主机已启用 SSH，并允许使用密钥、SSH Agent 或 SSH config 非交互登录
+- 远程主机已启用 SSH，并允许使用现有密钥登录，或在首次配对时使用该账户的登录密码
 - 远程 DSH 可从该主机自身的 `127.0.0.1:<端口>` 访问
 
-首次连接一台新主机前，请先通过可信方式核对并写入 SSH host key。DSH Tunnel 不会关闭或绕过主机密钥校验。
+首次连接时，DSH Tunnel 会显示目标设备的 SSH 主机指纹。请通过可信方式核对该指纹；确认后可以输入目标设备账户的登录密码，客户端将生成应用专用密钥并安装其公钥。DSH Tunnel 不会关闭或绕过主机密钥校验。
 
 ## 启动本机 DSH
 
@@ -101,7 +101,9 @@ shasum -a 256 -c DSH.Tunnel-<版本>-macos-arm64.dmg.sha256
 - **DSH 端口**：远程主机上的 DSH 监听端口，默认为 `3080`
 - **本地端口**：本机浏览器访问该 DSH 时使用的端口
 
-保存后点击“连接并打开”。例如，本地端口为 `13080` 时，浏览器会打开：
+保存后点击“连接并打开”。如果现有 SSH 密钥已经可用，客户端会直接连接；否则会显示首次配对窗口，要求核对主机指纹并输入一次目标设备账户的登录密码。配对完成后，后续连接将使用应用专用密钥，不再询问密码。
+
+例如，本地端口为 `13080` 时，浏览器会打开：
 
 ```text
 http://127.0.0.1:13080/
@@ -117,10 +119,11 @@ Windows 最小化后可继续使用系统托盘快捷菜单；关闭主窗口会
 
 ## 配置与隐私
 
-DSH Tunnel 保存显示名称、SSH 地址、SSH 用户和端口等连接设置，不保存：
+DSH Tunnel 保存显示名称、SSH 地址、SSH 用户和端口等连接设置。首次配对时生成的专用 SSH 密钥保存在系统应用数据目录的 `ssh/` 子目录中；只有公钥会安装到目标设备。
+
+DSH Tunnel 不保存：
 
 - SSH 密码
-- SSH 私钥或私钥内容
 - SSH Agent 凭据
 - DSH 账户凭据
 
@@ -167,7 +170,7 @@ Windows x64 构建产物：
 
 ```text
 dist/DSH-Tunnel-Setup-<版本>-x64.exe
-dist/win-unpacked/DSH Tunnel.exe
+dist/DSH-Tunnel-Portable-<版本>-x64.exe
 ```
 
 正式公开分发前，应分别完成 Apple Developer ID 签名与公证，以及 Windows 代码签名。

@@ -28,12 +28,12 @@ const outputPaths = await packager({
   ],
   out: path.join(projectDirectory, 'dist'),
   overwrite: true,
+  prune: true,
   ignore: [
     /(^|\/)dist($|\/)/,
     /(^|\/)test($|\/)/,
     /(^|\/)scripts($|\/)/,
     /(^|\/)resources($|\/)/,
-    /(^|\/)node_modules($|\/)/,
     /(^|\/)DEVELOPMENT_LOG\.md$/,
     /(^|\/)\.gitignore$/,
     /(^|\/)README\.md$/,

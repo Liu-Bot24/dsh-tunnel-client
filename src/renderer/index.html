@@ -162,6 +162,33 @@
       </form>
     </dialog>
 
+    <dialog id="pairing-dialog" class="pairing-dialog">
+      <form id="pairing-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="dialog-kicker">首次连接</p>
+            <h2 id="pairing-title">配对 SSH 主机</h2>
+          </div>
+          <button id="close-pairing" class="icon-control" aria-label="关闭" type="button">×</button>
+        </div>
+        <p class="pairing-intro">确认设备指纹并输入一次登录密码。配对完成后将使用专用密钥连接。</p>
+        <section class="pairing-identity" aria-label="SSH 主机身份">
+          <div><span>目标</span><code id="pairing-target"></code></div>
+          <div><span id="pairing-key-type">主机指纹</span><code id="pairing-fingerprint"></code></div>
+        </section>
+        <label>
+          <span>SSH 登录密码</span>
+          <input id="pairing-password" type="password" required maxlength="1024" autocomplete="current-password">
+          <small class="field-note">仅用于此次配对，不会保存。</small>
+        </label>
+        <p id="pairing-error" class="pairing-error hidden" role="alert"></p>
+        <div class="dialog-actions">
+          <button id="cancel-pairing" class="button secondary" type="button">取消</button>
+          <button id="confirm-pairing" class="button primary" type="submit">确认并连接</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="settings-dialog" class="settings-dialog">
       <form id="settings-form">
         <div class="dialog-heading">

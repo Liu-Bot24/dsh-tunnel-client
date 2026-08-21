@@ -65,6 +65,7 @@ class TunnelManager extends EventEmitter {
     waitForReady = waitForHttp,
     assertPortAvailable = assertLocalPortAvailable,
     sshCommand = 'ssh',
+    identityFile = null,
     stopTimeoutMs = 1_000,
     pollIntervalMs = 50,
   } = {}) {
@@ -73,6 +74,7 @@ class TunnelManager extends EventEmitter {
     this.waitForReady = waitForReady
     this.assertPortAvailable = assertPortAvailable
     this.sshCommand = sshCommand
+    this.identityFile = identityFile
     this.stopTimeoutMs = stopTimeoutMs
     this.pollIntervalMs = pollIntervalMs
     this.records = new Map()
@@ -131,7 +133,9 @@ class TunnelManager extends EventEmitter {
       await this.assertPortAvailable(record.endpoint.localPort)
       if (record.stopRequested) throw new Error('SSH 连接已取消')
 
-      const child = this.spawnImpl(this.sshCommand, buildSshArgs(record.endpoint), {
+      const child = this.spawnImpl(this.sshCommand, buildSshArgs(record.endpoint, {
+        identityFile: this.identityFile,
+      }), {
         shell: false,
         windowsHide: true,
         stdio: ['ignore', 'ignore', 'pipe'],

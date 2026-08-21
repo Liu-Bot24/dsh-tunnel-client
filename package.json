@@ -1,7 +1,7 @@
 {
   "name": "dsh-tunnel-client",
   "productName": "DSH Tunnel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "author": "DSH Tunnel",
   "description": "Desktop launcher for switching between DSH hosts through managed SSH local tunnels",
@@ -11,9 +11,9 @@
     "icons:tray": "electron scripts/render-tray-icons.cjs",
     "icon:win": "node scripts/generate-win-icon.cjs",
     "test": "node --test",
-    "check": "node --check src/main.cjs && node --check src/preload.cjs && node --check src/core/endpoint.cjs && node --check src/core/local-dsh-manager.cjs && node --check src/core/ssh.cjs && node --check src/core/store.cjs && node --check src/core/tray-menu.cjs && node --check src/core/tunnel-manager.cjs && node --check src/renderer/user-message.js && node --check src/renderer/app.js && node --check scripts/package-mac.mjs && node --check scripts/render-tray-icons.cjs && node --check scripts/generate-win-icon.cjs",
+    "check": "node --check src/main.cjs && node --check src/preload.cjs && node --check src/core/endpoint.cjs && node --check src/core/local-dsh-manager.cjs && node --check src/core/ssh.cjs && node --check src/core/ssh-pairing.cjs && node --check src/core/store.cjs && node --check src/core/tray-menu.cjs && node --check src/core/tunnel-manager.cjs && node --check src/renderer/user-message.js && node --check src/renderer/app.js && node --check scripts/package-mac.mjs && node --check scripts/render-tray-icons.cjs && node --check scripts/generate-win-icon.cjs",
     "package:mac": "node scripts/package-mac.mjs",
-    "package:win": "npm run icon:win && electron-builder --win nsis --x64"
+    "package:win": "npm run icon:win && electron-builder --win nsis portable --x64"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",
@@ -53,6 +53,9 @@
       "createStartMenuShortcut": true,
       "shortcutName": "DSH Tunnel",
       "artifactName": "DSH-Tunnel-Setup-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "DSH-Tunnel-Portable-${version}-${arch}.${ext}"
     }
   },
   "engines": {
@@ -60,6 +63,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "cross-spawn": "7.0.6"
+    "cross-spawn": "7.0.6",
+    "ssh2": "1.17.0"
   }
 }

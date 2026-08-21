@@ -410,7 +410,7 @@ dialog {
   color: var(--text-color);
 }
 dialog::backdrop { background: rgba(2, 8, 12, .62); backdrop-filter: blur(5px); }
-#endpoint-form, #settings-form { display: grid; gap: 18px; padding: 24px; }
+#endpoint-form, #settings-form, #pairing-form { display: grid; gap: 18px; padding: 24px; }
 #endpoint-form { gap: 14px; }
 .dialog-heading { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
 .dialog-heading h2 { margin: 0; font-size: 24px; letter-spacing: -.025em; }
@@ -438,6 +438,30 @@ input:focus { border-color: var(--accent-color); box-shadow: 0 0 0 3px color-mix
 .ssh-fields { display: grid; gap: 14px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 2px; }
 .split-actions { display: grid; grid-template-columns: auto 1fr auto auto; }
+
+.pairing-dialog { width: min(560px, calc(100% - 32px)); }
+.pairing-intro { margin: -4px 0 0; color: var(--muted-color); font-size: 11px; line-height: 1.6; }
+.pairing-identity {
+  display: grid;
+  gap: 12px;
+  padding: 15px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-medium);
+  background: var(--surface-bg);
+}
+.pairing-identity div { display: grid; gap: 6px; }
+.pairing-identity span { color: var(--muted-color); font-size: 9px; font-weight: 760; letter-spacing: .08em; text-transform: uppercase; }
+.pairing-identity code { overflow-wrap: anywhere; color: var(--text-color); font: 10px/1.5 var(--mono-font); }
+.pairing-error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger-color) 38%, var(--border-color));
+  border-radius: var(--radius-small);
+  background: color-mix(in srgb, var(--danger-color) 12%, var(--surface-bg));
+  color: var(--danger-color);
+  font-size: 10px;
+  line-height: 1.5;
+}
 
 .settings-dialog { width: min(700px, calc(100% - 32px)); }
 .theme-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; padding: 0; border: 0; }

@@ -4,7 +4,7 @@
 
 [简体中文](README.md) | [English](README.en.md)
 
-![Stars](https://img.shields.io/github/stars/Liu-Bot24/dsh-tunnel-client?style=flat&label=Stars) ![Forks](https://img.shields.io/github/forks/Liu-Bot24/dsh-tunnel-client?style=flat&label=Forks) ![Views 14d](https://github-stats.liu-qi.cn/api/badge/Liu-Bot24/dsh-tunnel-client/views14d.svg?v=4) ![Clones 14d](https://github-stats.liu-qi.cn/api/badge/Liu-Bot24/dsh-tunnel-client/clones14d.svg?v=4) ![Version](https://img.shields.io/badge/version-0.1.0-68ded5) ![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-173746?logo=apple&logoColor=white) ![Windows](https://img.shields.io/badge/Windows-x64-1554d1?logo=windows11&logoColor=white) ![License](https://img.shields.io/badge/license-MIT-b54b3b)
+![Stars](https://img.shields.io/github/stars/Liu-Bot24/dsh-tunnel-client?style=flat&label=Stars) ![Forks](https://img.shields.io/github/forks/Liu-Bot24/dsh-tunnel-client?style=flat&label=Forks) ![Views 14d](https://github-stats.liu-qi.cn/api/badge/Liu-Bot24/dsh-tunnel-client/views14d.svg?v=4) ![Clones 14d](https://github-stats.liu-qi.cn/api/badge/Liu-Bot24/dsh-tunnel-client/clones14d.svg?v=4) ![Version](https://img.shields.io/badge/version-0.1.1-68ded5) ![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-173746?logo=apple&logoColor=white) ![Windows](https://img.shields.io/badge/Windows-x64-1554d1?logo=windows11&logoColor=white) ![License](https://img.shields.io/badge/license-MIT-b54b3b)
 
 A desktop utility for launching DeepSeek Harness (DSH) locally and securely connecting to remote DSH instances through the system OpenSSH client.
 
@@ -40,7 +40,7 @@ DSH Tunnel can launch a local DSH instance, create local SSH tunnels to remote D
 - Open the default browser automatically when a connection is ready
 - Access common actions from the macOS menu bar or Windows system tray
 - Choose from five themes: Deep-Sea Whale Song, Nautical Chart, Phosphor Terminal, Bauhaus Signal, and Soft Porcelain
-- Use the system SSH configuration, keys, and SSH Agent without storing passwords or private keys
+- Use the system SSH configuration, keys, and SSH Agent, with in-app host verification and a dedicated key for first-time pairing
 
 ## Supported Platforms
 
@@ -65,9 +65,9 @@ shasum -a 256 -c DSH.Tunnel-<version>-macos-arm64.dmg.sha256
 
 ### Windows
 
-1. Download `DSH-Tunnel-Setup-<version>-x64.exe`.
-2. Run the installer and complete the setup wizard.
-3. Launch DSH Tunnel from the Start menu or desktop shortcut.
+1. Download `DSH-Tunnel-Setup-<version>-x64.exe`, run it, and complete the setup wizard.
+2. Alternatively, download `DSH-Tunnel-Portable-<version>-x64.exe` and run it without installation.
+3. Launch DSH Tunnel from the Start menu, desktop shortcut, or portable executable.
 
 The current Windows package is not signed with a trusted code-signing certificate, so Windows may display an **Unknown publisher** warning.
 
@@ -75,10 +75,10 @@ The current Windows package is not signed with a trusted code-signing certificat
 
 - A working OpenSSH client installed on the system
 - The `dsh` command installed and available if DSH Tunnel should launch DSH locally
-- SSH enabled on remote hosts, with non-interactive authentication available through a key, SSH Agent, or SSH config
+- SSH enabled on remote hosts, with either an existing key or the account password available for first-time pairing
 - The remote DSH WebUI reachable from its own host at `127.0.0.1:<port>`
 
-Before connecting to a new host, verify its SSH host key through a trusted channel and add it to `known_hosts`. DSH Tunnel does not disable or bypass host-key verification.
+On first connection, DSH Tunnel displays the target device's SSH host-key fingerprint. Verify it through a trusted channel; after confirmation, you can enter the target account's login password once so the client can generate a dedicated key and install its public key. DSH Tunnel does not disable or bypass host-key verification.
 
 ## Launching Local DSH
 
@@ -101,7 +101,9 @@ Click **Add Host** and enter:
 - **DSH port**: The DSH listening port on the remote host; default `3080`
 - **Local port**: The port used by the local browser to access this DSH instance
 
-Save the host and click **Connect and Open**. For example, if the local port is `13080`, the browser opens:
+Save the host and click **Connect and Open**. If an existing SSH key already works, the client connects immediately. Otherwise, the first-time pairing dialog asks you to verify the host fingerprint and enter the target account's login password once. Future connections use the dedicated app key without asking for the password again.
+
+For example, if the local port is `13080`, the browser opens:
 
 ```text
 http://127.0.0.1:13080/
@@ -117,10 +119,11 @@ On Windows, the system tray remains available while the window is minimized. Clo
 
 ## Configuration and Privacy
 
-DSH Tunnel stores connection settings such as display names, SSH addresses, SSH users, and ports. It does not store:
+DSH Tunnel stores connection settings such as display names, SSH addresses, SSH users, and ports. A dedicated SSH key generated during first-time pairing is stored in the `ssh/` subdirectory of the platform application-data directory; only its public key is installed on the target device.
+
+DSH Tunnel does not store:
 
 - SSH passwords
-- SSH private keys or private-key contents
 - SSH Agent credentials
 - DSH account credentials
 
@@ -167,7 +170,7 @@ Windows x64 outputs:
 
 ```text
 dist/DSH-Tunnel-Setup-<version>-x64.exe
-dist/win-unpacked/DSH Tunnel.exe
+dist/DSH-Tunnel-Portable-<version>-x64.exe
 ```
 
 Public distribution should use Apple Developer ID signing and notarization for macOS, and trusted code signing for Windows.

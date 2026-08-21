@@ -3,6 +3,7 @@ const { pathToFileURL } = require('node:url')
 const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell, Tray } = require('electron')
 const { DEFAULT_THEME, EndpointStore, SettingsStore } = require('./core/store.cjs')
 const { normalizeEndpoint, loopbackUrl } = require('./core/endpoint.cjs')
+const { SshPairingService } = require('./core/ssh-pairing.cjs')
 const { TunnelManager, endpointFingerprint } = require('./core/tunnel-manager.cjs')
 const { buildTrayMenuTemplate } = require('./core/tray-menu.cjs')
 const {
@@ -24,8 +25,9 @@ let closing = false
 let localDsh
 let endpointStore
 let settingsStore
+let sshPairing
+let tunnels
 let endpointStoreWritable = true
-const tunnels = new TunnelManager()
 const indexFile = path.join(__dirname, 'renderer', 'index.html')
 const indexUrl = pathToFileURL(indexFile).toString()
 const windowsIcon = path.join(__dirname, '..', 'resources', 'app-icon.ico')
@@ -208,6 +210,26 @@ function registerIpc(endpointStore, settingsStore) {
     return startTunnel(id)
   })
 
+  ipcMain.handle('ssh-pairing:inspect', async (event, id) => {
+    assertSender(event)
+    const endpoint = findEndpoint(id)
+    if (endpoint.mode !== 'ssh') throw new Error('本机直连不需要 SSH 配对')
+    return sshPairing.inspect(endpoint)
+  })
+
+  ipcMain.handle('ssh-pairing:pair', async (event, input) => {
+    assertSender(event)
+    if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+      throw new Error('SSH 配对信息格式不正确')
+    }
+    const endpoint = findEndpoint(input.endpointId)
+    if (endpoint.mode !== 'ssh') throw new Error('本机直连不需要 SSH 配对')
+    return sshPairing.pair(endpoint, {
+      password: input.password,
+      approvedFingerprint: input.approvedFingerprint,
+    })
+  })
+
   ipcMain.handle('tunnels:stop', async (event, id) => {
     assertSender(event)
     return stopTunnel(id)
@@ -361,6 +383,13 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   endpointStore = new EndpointStore(path.join(app.getPath('userData'), 'endpoints.json'))
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'))
+  sshPairing = new SshPairingService({
+    storageDirectory: path.join(app.getPath('userData'), 'ssh'),
+    knownHostsPath: path.join(app.getPath('home'), '.ssh', 'known_hosts'),
+  })
+  tunnels = new TunnelManager({
+    identityFile: sshPairing.identityFile,
+  })
   localDsh = new LocalDshManager({ cwd: app.getPath('home') })
   const defaultLocal = normalizeEndpoint({
     id: 'local-dsh',
@@ -410,7 +439,7 @@ app.on('before-quit', (event) => {
   event.preventDefault()
   closing = true
   const stopLocal = localDsh?.hasOwnedProcess() ? localDsh.stop() : Promise.resolve()
-  Promise.all([tunnels.stopAll(), stopLocal]).then(
+  Promise.all([tunnels?.stopAll() ?? Promise.resolve(), stopLocal]).then(
     () => app.quit(),
     () => {
       closing = false

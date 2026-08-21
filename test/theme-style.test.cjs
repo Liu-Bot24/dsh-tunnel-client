@@ -128,7 +128,7 @@ test('macOS package includes transparent menu bar template icons', () => {
   assert.match(main, /image\.setTemplateImage\(true\)/)
 })
 
-test('Windows package uses a multi-size whale icon for the app and NSIS installer', () => {
+test('Windows package uses the whale icon and produces installer and portable artifacts', () => {
   const icon = fs.readFileSync(path.join(projectRoot, 'resources/app-icon.ico'))
   const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'))
   assert.equal(icon.readUInt16LE(0), 0)
@@ -137,4 +137,7 @@ test('Windows package uses a multi-size whale icon for the app and NSIS installe
   assert.equal(packageJson.build.win.icon, 'resources/app-icon.ico')
   assert.equal(packageJson.build.win.target[0].target, 'nsis')
   assert.match(packageJson.scripts['package:win'], /icon:win/)
+  assert.match(packageJson.scripts['package:win'], /nsis portable/)
+  assert.equal(packageJson.build.nsis.artifactName, 'DSH-Tunnel-Setup-${version}-${arch}.${ext}')
+  assert.equal(packageJson.build.portable.artifactName, 'DSH-Tunnel-Portable-${version}-${arch}.${ext}')
 })
