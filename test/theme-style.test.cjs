@@ -55,6 +55,38 @@ test('theme font stacks include explicit Chinese fallbacks', () => {
   }
 })
 
+test('localized READMEs include optimized JPEG screenshots for every theme', () => {
+  const readme = fs.readFileSync(path.join(projectRoot, 'README.md'), 'utf8')
+  const readmeEn = fs.readFileSync(path.join(projectRoot, 'README.en.md'), 'utf8')
+  const heroPath = 'docs/images/hero.jpg'
+  const hero = fs.readFileSync(path.join(projectRoot, heroPath))
+  const themes = [
+    'whale-song',
+    'nautical-chart',
+    'phosphor',
+    'bauhaus-signal',
+    'soft-porcelain',
+    'theme-selector',
+  ]
+
+  assert.match(readme, /\[English\]\(README\.en\.md\)/)
+  assert.match(readmeEn, /\[简体中文\]\(README\.md\)/)
+  assert.match(readme, new RegExp(heroPath.replaceAll('.', '\\.')))
+  assert.match(readmeEn, new RegExp(heroPath.replaceAll('.', '\\.')))
+  assert.deepEqual(hero.subarray(0, 2), Buffer.from([0xff, 0xd8]))
+  assert.ok(hero.length < 300 * 1024, 'hero image is too large')
+
+  for (const theme of themes) {
+    const relativePath = `docs/images/themes/${theme}.jpg`
+    const image = fs.readFileSync(path.join(projectRoot, relativePath))
+    assert.match(readme, new RegExp(relativePath.replaceAll('.', '\\.')))
+    assert.match(readmeEn, new RegExp(relativePath.replaceAll('.', '\\.')))
+    assert.deepEqual(image.subarray(0, 2), Buffer.from([0xff, 0xd8]))
+    assert.ok(image.length < 300 * 1024, `${theme} screenshot is too large`)
+  }
+  assert.doesNotMatch(readme, /docs\/images\/themes\/[^\s"')]+\.png/)
+})
+
 test('whale animation remains enabled with an accessibility fallback', () => {
   assert.match(css, /whale-figure \{ animation: whale-drift/)
   assert.match(css, /@keyframes whale-drift/)
