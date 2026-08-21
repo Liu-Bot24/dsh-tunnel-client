@@ -55,6 +55,13 @@ test('theme font stacks include explicit Chinese fallbacks', () => {
   }
 })
 
+test('whale animation remains enabled with an accessibility fallback', () => {
+  assert.match(css, /whale-figure \{ animation: whale-drift/)
+  assert.match(css, /@keyframes whale-drift/)
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/)
+  assert.match(css, /\.whale-figure, \.whale-bubbles \{ animation: none !important; \}/)
+})
+
 test('macOS package uses the custom whale icon', () => {
   const icon = fs.readFileSync(path.join(projectRoot, 'resources/app-icon.icns'))
   const packager = fs.readFileSync(path.join(projectRoot, 'scripts/package-mac.mjs'), 'utf8')
@@ -73,4 +80,15 @@ test('macOS package includes transparent menu bar template icons', () => {
   assert.match(packager, /trayTemplate\.png/)
   assert.match(packager, /trayTemplate@2x\.png/)
   assert.match(main, /image\.setTemplateImage\(true\)/)
+})
+
+test('Windows package uses a multi-size whale icon for the app and NSIS installer', () => {
+  const icon = fs.readFileSync(path.join(projectRoot, 'resources/app-icon.ico'))
+  const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'))
+  assert.equal(icon.readUInt16LE(0), 0)
+  assert.equal(icon.readUInt16LE(2), 1)
+  assert.ok(icon.readUInt16LE(4) >= 8)
+  assert.equal(packageJson.build.win.icon, 'resources/app-icon.ico')
+  assert.equal(packageJson.build.win.target[0].target, 'nsis')
+  assert.match(packageJson.scripts['package:win'], /icon:win/)
 })

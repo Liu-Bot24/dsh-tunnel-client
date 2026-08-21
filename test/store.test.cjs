@@ -10,13 +10,20 @@ const {
   SUPPORTED_THEMES,
 } = require('../src/core/store.cjs')
 
+function assertPrivatePosixMode(filename) {
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(filename).mode & 0o777, 0o600)
+  }
+}
+
 test('stores and reloads endpoints atomically', (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-tunnel-store-'))
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
   const store = new EndpointStore(path.join(directory, 'endpoints.json'))
   const saved = store.save([{ id: 'one', name: 'One', sshHost: 'one', localPort: 13080 }])
   assert.deepEqual(store.load(), saved)
-  assert.equal(fs.statSync(path.join(directory, 'endpoints.json')).mode & 0o777, 0o600)
+  assertPrivatePosixMode(path.join(directory, 'endpoints.json'))
+  assert.deepEqual(fs.readdirSync(directory), ['endpoints.json'])
 })
 
 test('rejects duplicate local ports', (t) => {
@@ -49,7 +56,8 @@ test('uses and persists a supported interface theme', (t) => {
   assert.deepEqual(store.load(), { theme: DEFAULT_THEME })
   const saved = store.save({ theme: SUPPORTED_THEMES[2] })
   assert.deepEqual(store.load(), saved)
-  assert.equal(fs.statSync(filename).mode & 0o777, 0o600)
+  assertPrivatePosixMode(filename)
+  assert.deepEqual(fs.readdirSync(directory), ['settings.json'])
 })
 
 test('rejects unknown interface themes', (t) => {

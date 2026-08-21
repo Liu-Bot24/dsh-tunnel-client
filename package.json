@@ -3,22 +3,63 @@
   "productName": "DSH Tunnel",
   "version": "0.1.0",
   "private": true,
+  "author": "DSH Tunnel",
   "description": "Desktop launcher for switching between DSH hosts through managed SSH local tunnels",
   "main": "src/main.cjs",
   "scripts": {
     "start": "electron .",
     "icons:tray": "electron scripts/render-tray-icons.cjs",
+    "icon:win": "node scripts/generate-win-icon.cjs",
     "test": "node --test",
-    "check": "node --check src/main.cjs && node --check src/preload.cjs && node --check src/core/endpoint.cjs && node --check src/core/local-dsh-manager.cjs && node --check src/core/ssh.cjs && node --check src/core/store.cjs && node --check src/core/tray-menu.cjs && node --check src/core/tunnel-manager.cjs && node --check src/renderer/user-message.js && node --check src/renderer/app.js && node --check scripts/package-mac.mjs && node --check scripts/render-tray-icons.cjs",
+    "check": "node --check src/main.cjs && node --check src/preload.cjs && node --check src/core/endpoint.cjs && node --check src/core/local-dsh-manager.cjs && node --check src/core/ssh.cjs && node --check src/core/store.cjs && node --check src/core/tray-menu.cjs && node --check src/core/tunnel-manager.cjs && node --check src/renderer/user-message.js && node --check src/renderer/app.js && node --check scripts/package-mac.mjs && node --check scripts/render-tray-icons.cjs && node --check scripts/generate-win-icon.cjs",
     "package:mac": "node scripts/package-mac.mjs",
-    "package:win": "electron-packager . 'DSH Tunnel' --platform=win32 --arch=x64 --out=dist --overwrite --ignore='^/dist($|/)' --ignore='^/test($|/)'"
+    "package:win": "npm run icon:win && electron-builder --win nsis --x64"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",
-    "electron": "43.4.1"
+    "electron": "43.4.1",
+    "electron-builder": "26.15.3",
+    "sharp": "0.35.3"
+  },
+  "build": {
+    "appId": "app.dshtunnel.client",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "resources/app-icon.ico",
+      "package.json"
+    ],
+    "win": {
+      "icon": "resources/app-icon.ico",
+      "executableName": "DSH Tunnel",
+      "requestedExecutionLevel": "asInvoker",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DSH Tunnel",
+      "artifactName": "DSH-Tunnel-Setup-${version}-${arch}.${ext}"
+    }
   },
   "engines": {
     "node": ">=22"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "cross-spawn": "7.0.6"
+  }
 }

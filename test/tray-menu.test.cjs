@@ -53,10 +53,12 @@ test('remote actions follow tunnel state and preserve the endpoint id', () => {
   ])
 })
 
-test('desktop lifecycle keeps a single tray instance and hides the window on close', () => {
+test('desktop lifecycle keeps one tray instance and only hides the window on macOS', () => {
   const main = fs.readFileSync(path.resolve(__dirname, '../src/main.cjs'), 'utf8')
   assert.match(main, /app\.requestSingleInstanceLock\(\)/)
   assert.match(main, /window\.on\('close', \(event\) =>/)
+  assert.match(main, /process\.platform !== 'darwin'/)
   assert.match(main, /event\.preventDefault\(\)[\s\S]*window\.hide\(\)/)
+  assert.match(main, /window-all-closed[\s\S]*process\.platform !== 'darwin'[\s\S]*app\.quit\(\)/)
   assert.match(main, /app\.on\('second-instance', showMainWindow\)/)
 })

@@ -2,7 +2,7 @@ const { EventEmitter } = require('node:events')
 const fs = require('node:fs')
 const http = require('node:http')
 const net = require('node:net')
-const { spawn } = require('node:child_process')
+const spawn = process.platform === 'win32' ? require('cross-spawn') : require('node:child_process').spawn
 
 const DSH_TITLE = '<title>DeepSeek Harness</title>'
 
@@ -28,7 +28,9 @@ class LocalDshManager extends EventEmitter {
     executable = resolveDshExecutable(),
     cwd = process.cwd(),
     startupTimeout = 20_000,
+    shutdownTimeout = 5_000,
     pollInterval = 250,
+    terminateProcess = terminateChildProcess,
   } = {}) {
     super()
     this.spawnProcess = spawnProcess
@@ -36,7 +38,9 @@ class LocalDshManager extends EventEmitter {
     this.executable = executable
     this.cwd = cwd
     this.startupTimeout = startupTimeout
+    this.shutdownTimeout = shutdownTimeout
     this.pollInterval = pollInterval
+    this.terminateProcess = terminateProcess
     this.child = null
     this.state = Object.freeze({ state: 'stopped', port: 3080, owned: false, error: null })
   }
@@ -98,10 +102,7 @@ class LocalDshManager extends EventEmitter {
       })
       child.once('exit', (code, signal) => {
         if (this.child === child) this.child = null
-        if (this.state.state === 'stopping') {
-          this.setState({ state: 'stopped', port, owned: false, error: null })
-          return
-        }
+        if (this.state.state === 'stopping') return
         this.setState({ state: 'error', port, owned: false, error: 'DSH 启动失败' })
         reject(new Error(this.state.error))
       })
@@ -133,26 +134,60 @@ class LocalDshManager extends EventEmitter {
     const child = this.child
     const port = this.state.port
     this.setState({ state: 'stopping', port, owned: true, error: null })
-    await new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        child.kill('SIGKILL')
-      }, 3000)
-      child.once('exit', () => {
-        clearTimeout(timeout)
-        resolve()
+    try {
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('DSH 进程未能退出')), this.shutdownTimeout)
+        child.once('exit', () => {
+          clearTimeout(timeout)
+          resolve()
+        })
+        Promise.resolve(this.terminateProcess(child)).catch((error) => {
+          clearTimeout(timeout)
+          reject(error)
+        })
       })
-      child.kill()
-    })
-    this.child = null
+      await waitForDshStop(this.probe, port, this.shutdownTimeout, this.pollInterval)
+    } catch (error) {
+      this.setState({ state: 'error', port, owned: false, error: 'DSH 停止失败' })
+      throw error
+    } finally {
+      if (this.child === child) this.child = null
+    }
     return this.setState({ state: 'stopped', port, owned: false, error: null })
   }
+}
+
+function terminateChildProcess(child, {
+  platform = process.platform,
+  spawnProcess = spawn,
+} = {}) {
+  if (platform !== 'win32' || !Number.isInteger(child.pid)) {
+    child.kill()
+    return Promise.resolve()
+  }
+  return new Promise((resolve, reject) => {
+    const killer = spawnProcess('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], {
+      shell: false,
+      windowsHide: true,
+      stdio: ['ignore', 'ignore', 'pipe'],
+    })
+    let stderr = ''
+    killer.stderr?.on('data', (chunk) => {
+      stderr = `${stderr}${String(chunk)}`.slice(-4096)
+    })
+    killer.once('error', reject)
+    killer.once('exit', (code) => {
+      if (code === 0) resolve()
+      else reject(new Error(stderr.trim() || '无法终止 DSH 进程树'))
+    })
+  })
 }
 
 function resolveDshExecutable(platform = process.platform) {
   const candidates = platform === 'darwin'
     ? ['/opt/homebrew/bin/dsh', '/usr/local/bin/dsh']
     : platform === 'win32'
-      ? ['dsh.cmd', 'dsh.exe']
+      ? ['dsh']
       : ['/usr/local/bin/dsh', '/usr/bin/dsh']
   return candidates.find((candidate) => candidate.includes('/') && fs.existsSync(candidate)) ?? candidates.at(-1) ?? 'dsh'
 }
@@ -205,6 +240,15 @@ async function waitForDsh(probe, port, timeout, interval, cancelled = () => fals
   throw new Error('DSH 启动超时')
 }
 
+async function waitForDshStop(probe, port, timeout, interval) {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (await probe(port) === 'free') return
+    await new Promise((resolve) => setTimeout(resolve, interval))
+  }
+  throw new Error('DSH 端口仍在响应')
+}
+
 module.exports = {
   DSH_TITLE,
   DshNotInstalledError,
@@ -214,4 +258,6 @@ module.exports = {
   isPortAvailable,
   probeLocalService,
   resolveDshExecutable,
+  terminateChildProcess,
+  waitForDshStop,
 }

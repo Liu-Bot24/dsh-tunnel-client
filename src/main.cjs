@@ -24,10 +24,10 @@ let closing = false
 let localDsh
 let endpointStore
 let settingsStore
-let trayNoticeShown = false
 const tunnels = new TunnelManager()
 const indexFile = path.join(__dirname, 'renderer', 'index.html')
 const indexUrl = pathToFileURL(indexFile).toString()
+const windowsIcon = path.join(__dirname, '..', 'resources', 'app-icon.ico')
 const themeBackgrounds = {
   'whale-song': '#061923',
   'nautical-chart': '#f7f3e4',
@@ -282,17 +282,19 @@ function updateTrayMenu() {
 
 function createTray() {
   const filename = process.platform === 'win32' ? 'app-icon.ico' : 'trayTemplate.png'
-  const resourcePath = app.isPackaged
-    ? path.join(process.resourcesPath, filename)
-    : path.join(__dirname, '..', 'resources', filename)
+  const resourcePath = process.platform === 'win32'
+    ? windowsIcon
+    : app.isPackaged
+      ? path.join(process.resourcesPath, filename)
+      : path.join(__dirname, '..', 'resources', filename)
   const image = nativeImage.createFromPath(resourcePath)
   if (image.isEmpty()) throw new Error(`Tray icon is missing: ${resourcePath}`)
   if (process.platform === 'darwin') image.setTemplateImage(true)
 
   tray = new Tray(image)
   tray.setToolTip('DSH Tunnel')
+  if (process.platform === 'win32') tray.on('click', showMainWindow)
   tray.on('double-click', showMainWindow)
-  tray.on('balloon-click', showMainWindow)
   updateTrayMenu()
 }
 
@@ -303,6 +305,7 @@ function createWindow() {
     minWidth: 760,
     minHeight: 540,
     title: 'DSH Tunnel',
+    icon: process.platform === 'win32' ? windowsIcon : undefined,
     backgroundColor: themeBackgrounds[settings?.theme] ?? themeBackgrounds[DEFAULT_THEME],
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -317,16 +320,9 @@ function createWindow() {
     if (url !== indexUrl) event.preventDefault()
   })
   window.on('close', (event) => {
-    if (closing) return
+    if (closing || process.platform !== 'darwin') return
     event.preventDefault()
     window.hide()
-    if (process.platform === 'win32' && tray && !trayNoticeShown) {
-      trayNoticeShown = true
-      tray.displayBalloon({
-        title: 'DSH Tunnel',
-        content: 'DSH Tunnel 仍在运行，可从系统托盘重新打开或退出。',
-      })
-    }
   })
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined
@@ -334,8 +330,15 @@ function createWindow() {
   window.loadFile(indexFile)
 }
 
-app.whenReady().then(() => {
+function sendToMainWindow(channel, state) {
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send(channel, state)
+  }
+}
+
+app.whenReady().then(async () => {
   if (!isPrimaryInstance) return
+  if (process.platform === 'win32') app.setAppUserModelId('app.dshtunnel.client')
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   endpointStore = new EndpointStore(path.join(app.getPath('userData'), 'endpoints.json'))
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'))
@@ -359,13 +362,14 @@ app.whenReady().then(() => {
   }
   registerIpc(endpointStore, settingsStore)
   tunnels.on('state', (state) => {
-    mainWindow?.webContents.send('tunnels:state', state)
+    sendToMainWindow('tunnels:state', state)
     updateTrayMenu()
   })
   localDsh.on('state', (state) => {
-    mainWindow?.webContents.send('local-dsh:state', state)
+    sendToMainWindow('local-dsh:state', state)
     updateTrayMenu()
   })
+  await localDsh.inspect(localEndpoint()?.remotePort ?? 3080)
   createWindow()
   createTray()
   app.on('activate', () => {
@@ -374,6 +378,10 @@ app.whenReady().then(() => {
 })
 
 app.on('second-instance', showMainWindow)
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})
 
 app.on('before-quit', (event) => {
   if (closing) return
