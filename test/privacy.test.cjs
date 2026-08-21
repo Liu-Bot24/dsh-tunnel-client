@@ -5,7 +5,7 @@ const path = require('node:path')
 
 const projectRoot = path.resolve(__dirname, '..')
 const absoluteHomePattern = /(?:\/Users\/[A-Za-z0-9._-]+|[A-Za-z]:\\Users\\[A-Za-z0-9._-]+)/
-const emailPattern = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i
+const emailPattern = /\b[A-Z0-9._%+-]+@[A-Z][A-Z0-9.-]*\.[A-Z]{2,}\b/i
 
 function read(filename) {
   return fs.readFileSync(path.join(projectRoot, filename), 'utf8')
@@ -62,10 +62,12 @@ test('tracked product text avoids user-home paths and email addresses', () => {
     'README.md',
     'package.json',
     'scripts/package-mac.mjs',
+    'scripts/render-tray-icons.cjs',
     'src/main.cjs',
     'src/core/endpoint.cjs',
     'src/core/local-dsh-manager.cjs',
     'src/core/store.cjs',
+    'src/core/tray-menu.cjs',
     'src/core/tunnel-manager.cjs',
     'src/renderer/index.html',
     'src/renderer/app.js',

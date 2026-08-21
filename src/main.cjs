@@ -1,9 +1,10 @@
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell, Tray } = require('electron')
 const { DEFAULT_THEME, EndpointStore, SettingsStore } = require('./core/store.cjs')
 const { normalizeEndpoint, loopbackUrl } = require('./core/endpoint.cjs')
 const { TunnelManager } = require('./core/tunnel-manager.cjs')
+const { buildTrayMenuTemplate } = require('./core/tray-menu.cjs')
 const {
   LocalDshManager,
   LocalPortOccupiedError,
@@ -12,12 +13,18 @@ const {
 } = require('./core/local-dsh-manager.cjs')
 
 app.enableSandbox()
+const isPrimaryInstance = app.requestSingleInstanceLock()
+if (!isPrimaryInstance) app.quit()
 
 let mainWindow
+let tray
 let endpoints = []
 let settings
 let closing = false
 let localDsh
+let endpointStore
+let settingsStore
+let trayNoticeShown = false
 const tunnels = new TunnelManager()
 const indexFile = path.join(__dirname, 'renderer', 'index.html')
 const indexUrl = pathToFileURL(indexFile).toString()
@@ -62,6 +69,68 @@ async function openLocalDsh(port) {
   return url
 }
 
+async function startTunnel(id) {
+  const endpoint = findEndpoint(id)
+  if (endpoint.mode !== 'ssh') throw new Error('本机直连不需要 SSH 隧道')
+  return tunnels.start(endpoint)
+}
+
+async function stopTunnel(id) {
+  findEndpoint(id)
+  return tunnels.stop(id)
+}
+
+async function openEndpoint(id) {
+  const endpoint = findEndpoint(id)
+  if (endpoint.mode === 'ssh') {
+    const state = tunnels.get(id)
+    if (state?.state !== 'connected') throw new Error('请先连接，再打开 DSH')
+  } else {
+    const state = await localDsh.inspect(endpoint.remotePort)
+    if (state.state !== 'running') throw new Error('本机 DSH 尚未启动')
+  }
+  const url = loopbackUrl(endpoint)
+  await shell.openExternal(url)
+  return url
+}
+
+async function startLocalDsh() {
+  let port = localEndpoint()?.remotePort ?? 3080
+  let state
+  try {
+    state = await localDsh.start(port)
+  } catch (error) {
+    if (!(error instanceof LocalPortOccupiedError)) throw error
+    const suggestedPort = await findNextAvailablePort(port + 1)
+    const options = {
+      type: 'warning',
+      title: '本地端口已占用',
+      message: `本地端口 ${port} 已被其他程序占用`,
+      detail: `可以改用 ${suggestedPort} 启动本机 DSH。`,
+      buttons: [`改用 ${suggestedPort}`, '取消'],
+      defaultId: 0,
+      cancelId: 1,
+    }
+    const choice = mainWindow?.isVisible()
+      ? await dialog.showMessageBox(mainWindow, options)
+      : await dialog.showMessageBox(options)
+    if (choice.response !== 0) return { cancelled: true, state: localDsh.getState() }
+    port = suggestedPort
+    state = await localDsh.start(port)
+  }
+  saveLocalEndpoint(endpointStore, port)
+  updateTrayMenu()
+  return { cancelled: false, state }
+}
+
+async function openLocalDshEndpoint() {
+  const endpoint = localEndpoint()
+  const port = endpoint?.remotePort ?? localDsh.getState().port
+  const state = await localDsh.inspect(port)
+  if (state.state !== 'running') throw new Error('本机 DSH 尚未启动')
+  return openLocalDsh(port)
+}
+
 function registerIpc(endpointStore, settingsStore) {
   ipcMain.handle('endpoints:list', async (event) => {
     assertSender(event)
@@ -88,6 +157,7 @@ function registerIpc(endpointStore, settingsStore) {
     const next = endpoints.filter((entry) => entry.id !== normalized.id)
     next.push(normalized)
     endpoints = endpointStore.save(next)
+    updateTrayMenu()
     return normalized
   })
 
@@ -97,6 +167,7 @@ function registerIpc(endpointStore, settingsStore) {
     if (endpoint.mode === 'local') throw new Error('本机 DSH 固定显示，不能删除')
     await tunnels.stop(id)
     endpoints = endpointStore.save(endpoints.filter((entry) => entry.id !== id))
+    updateTrayMenu()
     return true
   })
 
@@ -114,56 +185,22 @@ function registerIpc(endpointStore, settingsStore) {
 
   ipcMain.handle('tunnels:start', async (event, id) => {
     assertSender(event)
-    const endpoint = findEndpoint(id)
-    if (endpoint.mode !== 'ssh') throw new Error('本机直连不需要 SSH 隧道')
-    return tunnels.start(endpoint)
+    return startTunnel(id)
   })
 
   ipcMain.handle('tunnels:stop', async (event, id) => {
     assertSender(event)
-    findEndpoint(id)
-    return tunnels.stop(id)
+    return stopTunnel(id)
   })
 
   ipcMain.handle('endpoints:open', async (event, id) => {
     assertSender(event)
-    const endpoint = findEndpoint(id)
-    if (endpoint.mode === 'ssh') {
-      const state = tunnels.get(id)
-      if (state?.state !== 'connected') throw new Error('请先连接，再打开 DSH')
-    } else {
-      const state = await localDsh.inspect(endpoint.remotePort)
-      if (state.state !== 'running') throw new Error('本机 DSH 尚未启动')
-    }
-    const url = loopbackUrl(endpoint)
-    await shell.openExternal(url)
-    return url
+    return openEndpoint(id)
   })
 
   ipcMain.handle('local-dsh:start', async (event) => {
     assertSender(event)
-    let port = localEndpoint()?.remotePort ?? 3080
-    let state
-    try {
-      state = await localDsh.start(port)
-    } catch (error) {
-      if (!(error instanceof LocalPortOccupiedError)) throw error
-      const suggestedPort = await findNextAvailablePort(port + 1)
-      const choice = await dialog.showMessageBox(mainWindow, {
-        type: 'warning',
-        title: '本地端口已占用',
-        message: `本地端口 ${port} 已被其他程序占用`,
-        detail: `可以改用 ${suggestedPort} 启动本机 DSH。`,
-        buttons: [`改用 ${suggestedPort}`, '取消'],
-        defaultId: 0,
-        cancelId: 1,
-      })
-      if (choice.response !== 0) return { cancelled: true, state: localDsh.getState() }
-      port = suggestedPort
-      state = await localDsh.start(port)
-    }
-    saveLocalEndpoint(endpointStore, port)
-    return { cancelled: false, state }
+    return startLocalDsh()
   })
 
   ipcMain.handle('local-dsh:save', async (event, input) => {
@@ -184,6 +221,7 @@ function registerIpc(endpointStore, settingsStore) {
     }
     saveLocalEndpoint(endpointStore, normalized.remotePort, normalized.name)
     await localDsh.inspect(normalized.remotePort)
+    updateTrayMenu()
     return normalized
   })
 
@@ -194,16 +232,72 @@ function registerIpc(endpointStore, settingsStore) {
 
   ipcMain.handle('local-dsh:open', async (event) => {
     assertSender(event)
-    const endpoint = localEndpoint()
-    const port = endpoint?.remotePort ?? localDsh.getState().port
-    const state = await localDsh.inspect(port)
-    if (state.state !== 'running') throw new Error('本机 DSH 尚未启动')
-    return openLocalDsh(port)
+    return openLocalDshEndpoint()
   })
 }
 
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+async function runTrayAction(action, fallback) {
+  try {
+    await action()
+  } catch {
+    showMainWindow()
+    dialog.showErrorBox('DSH Tunnel', fallback)
+  } finally {
+    updateTrayMenu()
+  }
+}
+
+function updateTrayMenu() {
+  if (!tray || tray.isDestroyed()) return
+  const template = buildTrayMenuTemplate({
+    endpoints,
+    tunnelStates: tunnels.list(),
+    localState: localDsh?.getState(),
+    actions: {
+      showWindow: showMainWindow,
+      startLocalAndOpen: () => runTrayAction(async () => {
+        const result = await startLocalDsh()
+        if (!result.cancelled) await openLocalDshEndpoint()
+      }, '本机 DSH 启动失败，请在主窗口查看状态。'),
+      openLocal: () => runTrayAction(openLocalDshEndpoint, 'WebUI 无法打开，请在主窗口查看状态。'),
+      stopLocal: () => runTrayAction(() => localDsh.stop(), '本机 DSH 停止失败，请在主窗口查看状态。'),
+      connectAndOpen: (id) => runTrayAction(async () => {
+        await startTunnel(id)
+        await openEndpoint(id)
+      }, '连接失败，请在主窗口查看状态。'),
+      openRemote: (id) => runTrayAction(() => openEndpoint(id), 'DSH 无法打开，请在主窗口查看状态。'),
+      disconnectRemote: (id) => runTrayAction(() => stopTunnel(id), '断开失败，请在主窗口查看状态。'),
+      quit: () => app.quit(),
+    },
+  })
+  tray.setContextMenu(Menu.buildFromTemplate(template))
+}
+
+function createTray() {
+  const filename = process.platform === 'win32' ? 'app-icon.ico' : 'trayTemplate.png'
+  const resourcePath = app.isPackaged
+    ? path.join(process.resourcesPath, filename)
+    : path.join(__dirname, '..', 'resources', filename)
+  const image = nativeImage.createFromPath(resourcePath)
+  if (image.isEmpty()) throw new Error(`Tray icon is missing: ${resourcePath}`)
+  if (process.platform === 'darwin') image.setTemplateImage(true)
+
+  tray = new Tray(image)
+  tray.setToolTip('DSH Tunnel')
+  tray.on('double-click', showMainWindow)
+  tray.on('balloon-click', showMainWindow)
+  updateTrayMenu()
+}
+
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 940,
     height: 680,
     minWidth: 760,
@@ -217,17 +311,34 @@ function createWindow() {
       sandbox: true,
     },
   })
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  mainWindow.webContents.on('will-navigate', (event, url) => {
+  mainWindow = window
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('will-navigate', (event, url) => {
     if (url !== indexUrl) event.preventDefault()
   })
-  mainWindow.loadFile(indexFile)
+  window.on('close', (event) => {
+    if (closing) return
+    event.preventDefault()
+    window.hide()
+    if (process.platform === 'win32' && tray && !trayNoticeShown) {
+      trayNoticeShown = true
+      tray.displayBalloon({
+        title: 'DSH Tunnel',
+        content: 'DSH Tunnel 仍在运行，可从系统托盘重新打开或退出。',
+      })
+    }
+  })
+  window.on('closed', () => {
+    if (mainWindow === window) mainWindow = undefined
+  })
+  window.loadFile(indexFile)
 }
 
 app.whenReady().then(() => {
+  if (!isPrimaryInstance) return
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
-  const endpointStore = new EndpointStore(path.join(app.getPath('userData'), 'endpoints.json'))
-  const settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'))
+  endpointStore = new EndpointStore(path.join(app.getPath('userData'), 'endpoints.json'))
+  settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'))
   localDsh = new LocalDshManager({ cwd: app.getPath('home') })
   try {
     endpoints = endpointStore.load()
@@ -247,17 +358,22 @@ app.whenReady().then(() => {
     settings = { theme: DEFAULT_THEME }
   }
   registerIpc(endpointStore, settingsStore)
-  tunnels.on('state', (state) => mainWindow?.webContents.send('tunnels:state', state))
-  localDsh.on('state', (state) => mainWindow?.webContents.send('local-dsh:state', state))
+  tunnels.on('state', (state) => {
+    mainWindow?.webContents.send('tunnels:state', state)
+    updateTrayMenu()
+  })
+  localDsh.on('state', (state) => {
+    mainWindow?.webContents.send('local-dsh:state', state)
+    updateTrayMenu()
+  })
   createWindow()
+  createTray()
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    showMainWindow()
   })
 })
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+app.on('second-instance', showMainWindow)
 
 app.on('before-quit', (event) => {
   if (closing) return

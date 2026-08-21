@@ -61,3 +61,16 @@ test('macOS package uses the custom whale icon', () => {
   assert.equal(icon.subarray(0, 4).toString('ascii'), 'icns')
   assert.match(packager, /icon: path\.join\(projectDirectory, 'resources', 'app-icon\.icns'\)/)
 })
+
+test('macOS package includes transparent menu bar template icons', () => {
+  const oneX = fs.readFileSync(path.join(projectRoot, 'resources/trayTemplate.png'))
+  const twoX = fs.readFileSync(path.join(projectRoot, 'resources/trayTemplate@2x.png'))
+  const packager = fs.readFileSync(path.join(projectRoot, 'scripts/package-mac.mjs'), 'utf8')
+  const main = fs.readFileSync(path.join(projectRoot, 'src/main.cjs'), 'utf8')
+  const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  assert.deepEqual(oneX.subarray(0, 8), pngSignature)
+  assert.deepEqual(twoX.subarray(0, 8), pngSignature)
+  assert.match(packager, /trayTemplate\.png/)
+  assert.match(packager, /trayTemplate@2x\.png/)
+  assert.match(main, /image\.setTemplateImage\(true\)/)
+})

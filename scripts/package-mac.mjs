@@ -11,6 +11,10 @@ const outputPaths = await packager({
   arch: 'arm64',
   appBundleId: 'app.dshtunnel.client',
   icon: path.join(projectDirectory, 'resources', 'app-icon.icns'),
+  extraResource: [
+    path.join(projectDirectory, 'resources', 'trayTemplate.png'),
+    path.join(projectDirectory, 'resources', 'trayTemplate@2x.png'),
+  ],
   out: path.join(projectDirectory, 'dist'),
   overwrite: true,
   ignore: [

@@ -196,7 +196,7 @@ function renderEndpointDetail() {
   else primaryActionButton.textContent = '连接并打开'
   stopButton.classList.remove('hidden')
   stopButton.textContent = isLocal ? '停止' : '断开'
-  stopButton.disabled = isLocal ? state.state !== 'running' : state.state !== 'connected'
+  stopButton.disabled = isLocal ? state.state !== 'running' || !state.owned : state.state !== 'connected'
   editButton.classList.remove('hidden')
   editButton.disabled = busy
 }

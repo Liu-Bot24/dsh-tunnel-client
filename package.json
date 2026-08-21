@@ -7,8 +7,9 @@
   "main": "src/main.cjs",
   "scripts": {
     "start": "electron .",
+    "icons:tray": "electron scripts/render-tray-icons.cjs",
     "test": "node --test",
-    "check": "node --check src/main.cjs && node --check src/preload.cjs && node --check src/core/endpoint.cjs && node --check src/core/local-dsh-manager.cjs && node --check src/core/ssh.cjs && node --check src/core/store.cjs && node --check src/core/tunnel-manager.cjs && node --check src/renderer/user-message.js && node --check src/renderer/app.js && node --check scripts/package-mac.mjs",
+    "check": "node --check src/main.cjs && node --check src/preload.cjs && node --check src/core/endpoint.cjs && node --check src/core/local-dsh-manager.cjs && node --check src/core/ssh.cjs && node --check src/core/store.cjs && node --check src/core/tray-menu.cjs && node --check src/core/tunnel-manager.cjs && node --check src/renderer/user-message.js && node --check src/renderer/app.js && node --check scripts/package-mac.mjs && node --check scripts/render-tray-icons.cjs",
     "package:mac": "node scripts/package-mac.mjs",
     "package:win": "electron-packager . 'DSH Tunnel' --platform=win32 --arch=x64 --out=dist --overwrite --ignore='^/dist($|/)' --ignore='^/test($|/)'"
   },
