@@ -14,7 +14,7 @@ test('normalizes an SSH config alias with stable defaults', () => {
     remotePort: 3080,
     localPort: 13080,
   })
-  assert.equal(loopbackUrl(endpoint), 'http://127.0.0.1:13080/')
+  assert.equal(loopbackUrl(endpoint), 'http://127.0.0.1:13080/?dsh_tunnel_preview=web')
 })
 
 test('normalizes a local endpoint without SSH fields', () => {
@@ -35,6 +35,13 @@ test('normalizes a local endpoint without SSH fields', () => {
     localPort: null,
   })
   assert.equal(loopbackUrl(endpoint), 'http://127.0.0.1:3080/')
+})
+
+test('marks only SSH tunnel pages for remote artifact preview', () => {
+  const remote = loopbackUrl({ name: 'Remote', sshHost: 'remote', localPort: 13081 })
+  const local = loopbackUrl({ mode: 'local', name: 'Local', remotePort: 3081 })
+  assert.equal(new URL(remote).searchParams.get('dsh_tunnel_preview'), 'web')
+  assert.equal(new URL(local).searchParams.has('dsh_tunnel_preview'), false)
 })
 
 test('reserves the fixed local endpoint id', () => {

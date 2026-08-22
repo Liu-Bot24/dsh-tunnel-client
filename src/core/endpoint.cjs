@@ -5,6 +5,7 @@ const USER_PATTERN = /^[A-Za-z0-9._-]+$/
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 const ENDPOINT_MODES = Object.freeze(['local', 'ssh'])
 const LOCAL_ENDPOINT_ID = 'local-dsh'
+const REMOTE_PREVIEW_MARKER = Object.freeze({ name: 'dsh_tunnel_preview', value: 'web' })
 const FIELD_LABELS = Object.freeze({
   name: '显示名称',
   sshHost: 'SSH 地址',
@@ -84,7 +85,11 @@ function normalizeEndpoint(input, { idFactory = randomUUID } = {}) {
 function loopbackUrl(endpoint) {
   const normalized = normalizeEndpoint(endpoint)
   const portNumber = normalized.mode === 'local' ? normalized.remotePort : normalized.localPort
-  return `http://127.0.0.1:${portNumber}/`
+  const url = new URL(`http://127.0.0.1:${portNumber}/`)
+  if (normalized.mode === 'ssh') {
+    url.searchParams.set(REMOTE_PREVIEW_MARKER.name, REMOTE_PREVIEW_MARKER.value)
+  }
+  return url.toString()
 }
 
-module.exports = { ENDPOINT_MODES, LOCAL_ENDPOINT_ID, normalizeEndpoint, loopbackUrl }
+module.exports = { ENDPOINT_MODES, LOCAL_ENDPOINT_ID, REMOTE_PREVIEW_MARKER, normalizeEndpoint, loopbackUrl }

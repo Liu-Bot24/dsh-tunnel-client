@@ -38,7 +38,7 @@ test('reports connected after the DSH readiness probe succeeds', async () => {
   })
   const state = await manager.start(endpoint)
   assert.equal(state.state, 'connected')
-  assert.equal(state.url, 'http://127.0.0.1:13080/')
+  assert.equal(state.url, 'http://127.0.0.1:13080/?dsh_tunnel_preview=web')
   await manager.stop('one')
   assert.equal(manager.get('one').state, 'stopped')
 })
