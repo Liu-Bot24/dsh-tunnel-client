@@ -355,6 +355,7 @@ function createWindow() {
       sandbox: true,
     },
   })
+  if (process.platform === 'win32') window.removeMenu()
   mainWindow = window
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event, url) => {

@@ -84,5 +84,6 @@ test('Windows removes Electron default application menu without affecting tray m
     main,
     /if \(process\.platform === 'win32'\) \{[\s\S]*?app\.setAppUserModelId\('app\.dshtunnel\.client'\)[\s\S]*?Menu\.setApplicationMenu\(null\)[\s\S]*?\}/,
   )
+  assert.match(main, /if \(process\.platform === 'win32'\) window\.removeMenu\(\)/)
   assert.match(main, /tray\.setContextMenu\(Menu\.buildFromTemplate\(template\)\)/)
 })
