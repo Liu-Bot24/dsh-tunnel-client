@@ -379,7 +379,10 @@ function sendToMainWindow(channel, state) {
 
 app.whenReady().then(async () => {
   if (!isPrimaryInstance) return
-  if (process.platform === 'win32') app.setAppUserModelId('app.dshtunnel.client')
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('app.dshtunnel.client')
+    Menu.setApplicationMenu(null)
+  }
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   endpointStore = new EndpointStore(path.join(app.getPath('userData'), 'endpoints.json'))
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'))

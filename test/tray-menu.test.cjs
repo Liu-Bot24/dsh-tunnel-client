@@ -77,3 +77,12 @@ test('desktop lifecycle keeps one tray instance and only hides the window on mac
   assert.match(main, /window-all-closed[\s\S]*process\.platform !== 'darwin'[\s\S]*app\.quit\(\)/)
   assert.match(main, /app\.on\('second-instance', showMainWindow\)/)
 })
+
+test('Windows removes Electron default application menu without affecting tray menus', () => {
+  const main = fs.readFileSync(path.resolve(__dirname, '../src/main.cjs'), 'utf8')
+  assert.match(
+    main,
+    /if \(process\.platform === 'win32'\) \{[\s\S]*?app\.setAppUserModelId\('app\.dshtunnel\.client'\)[\s\S]*?Menu\.setApplicationMenu\(null\)[\s\S]*?\}/,
+  )
+  assert.match(main, /tray\.setContextMenu\(Menu\.buildFromTemplate\(template\)\)/)
+})
