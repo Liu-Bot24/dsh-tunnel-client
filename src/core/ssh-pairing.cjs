@@ -160,7 +160,7 @@ function scanHostKey(endpoint, { ClientCtor = Client, timeoutMs = 10_000 } = {})
       else reject(error ?? new Error('无法读取 SSH 主机密钥'))
     }
     const timer = setTimeout(() => finish(new Error('SSH 主机不可达')), timeoutMs)
-    client.once('error', (error) => {
+    client.on('error', (error) => {
       if (captured) finish()
       else if (error?.code === 'ECONNREFUSED') finish(new Error('SSH 连接被拒绝'))
       else if (error?.code === 'ETIMEDOUT' || error?.code === 'EHOSTUNREACH') finish(new Error('SSH 主机不可达'))
@@ -284,7 +284,7 @@ function installKeyWithPassword(endpoint, password, publicKey, rawHostKey, {
     client.on('keyboard-interactive', (_name, _instructions, _language, prompts, complete) => {
       complete(prompts.map(() => password))
     })
-    client.once('error', finish)
+    client.on('error', finish)
     client.once('ready', () => {
       client.sftp((error, sftp) => {
         if (error) return finish(error)

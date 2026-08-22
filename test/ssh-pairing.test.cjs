@@ -1,6 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('node:crypto')
+const { EventEmitter } = require('node:events')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
@@ -12,6 +13,7 @@ const {
   knownHostsLine,
   parseSshConfigOutput,
   resolveSshEndpoint,
+  scanHostKey,
 } = require('../src/core/ssh-pairing.cjs')
 
 function sshString(value) {
@@ -79,6 +81,31 @@ test('resolves an SSH config alias before pairing', async () => {
 
 test('rejects incomplete SSH config output', () => {
   assert.throws(() => parseSshConfigOutput('hostname 192.0.2.10\nport 22\n'), /无法解析/)
+})
+
+test('keeps consuming socket errors after host-key capture finishes', async () => {
+  const key = fakeHostKey()
+  let client = null
+  class ResettingClient extends EventEmitter {
+    constructor() {
+      super()
+      client = this
+    }
+
+    connect(options) {
+      options.hostVerifier(key)
+      this.emit('error', Object.assign(new Error('verification stopped'), { code: 'EHOSTVERIFY' }))
+    }
+
+    end() {}
+  }
+
+  const result = await scanHostKey(endpoint(), { ClientCtor: ResettingClient })
+  assert.deepEqual(result.rawKey, key)
+  assert.equal(client.listenerCount('error'), 1)
+  assert.doesNotThrow(() => client.emit('error', Object.assign(new Error('reset after close'), {
+    code: 'ECONNRESET',
+  })))
 })
 
 test('pairing installs the generated public key and persists only host trust', async (context) => {
