@@ -2,9 +2,13 @@ const { EventEmitter } = require('node:events')
 const fs = require('node:fs')
 const http = require('node:http')
 const net = require('node:net')
-const spawn = process.platform === 'win32' ? require('cross-spawn') : require('node:child_process').spawn
+const childProcess = require('node:child_process')
+const crossSpawn = process.platform === 'win32' ? require('cross-spawn') : null
+const spawn = crossSpawn ?? childProcess.spawn
+const spawnSync = crossSpawn?.sync ?? childProcess.spawnSync
 
 const DSH_TITLE = '<title>DeepSeek Harness</title>'
+const NO_OPEN_MINIMUM = Object.freeze({ major: 0, minor: 1, patch: 0, rc: 8 })
 
 class LocalPortOccupiedError extends Error {
   constructor(port) {
@@ -31,6 +35,7 @@ class LocalDshManager extends EventEmitter {
     shutdownTimeout = 5_000,
     pollInterval = 250,
     terminateProcess = terminateChildProcess,
+    resolveVersion = resolveDshVersion,
   } = {}) {
     super()
     this.spawnProcess = spawnProcess
@@ -41,6 +46,8 @@ class LocalDshManager extends EventEmitter {
     this.shutdownTimeout = shutdownTimeout
     this.pollInterval = pollInterval
     this.terminateProcess = terminateProcess
+    this.resolveVersion = resolveVersion
+    this.noOpenSupported = null
     this.child = null
     this.startPromise = null
     this.startPort = null
@@ -107,7 +114,9 @@ class LocalDshManager extends EventEmitter {
     this.setState({ state: 'starting', port, owned: false, error: null })
     let child
     try {
-      child = this.spawnProcess(this.executable, ['web', '--port', String(port)], {
+      const args = ['web', '--port', String(port)]
+      if (this.#supportsNoOpen()) args.push('--no-open')
+      child = this.spawnProcess(this.executable, args, {
         cwd: this.cwd,
         env: process.env,
         shell: false,
@@ -159,6 +168,16 @@ class LocalDshManager extends EventEmitter {
       }
       throw error
     }
+  }
+
+  #supportsNoOpen() {
+    if (this.noOpenSupported !== null) return this.noOpenSupported
+    let version = null
+    try {
+      version = this.resolveVersion(this.executable)
+    } catch {}
+    this.noOpenSupported = supportsNoOpen(version)
+    return this.noOpenSupported
   }
 
   #trackChild(child, port) {
@@ -238,6 +257,32 @@ class LocalDshManager extends EventEmitter {
 
 function translateSpawnError(error) {
   return error?.code === 'ENOENT' ? new DshNotInstalledError() : error
+}
+
+function resolveDshVersion(executable, { spawnSyncProcess = spawnSync } = {}) {
+  const result = spawnSyncProcess(executable, ['--version'], {
+    shell: false,
+    windowsHide: true,
+    encoding: 'utf8',
+  })
+  if (result?.error || result?.status !== 0) return null
+  const output = String(result?.stdout ?? '').trim()
+  return output || null
+}
+
+function supportsNoOpen(version) {
+  const match = String(version ?? '').trim().match(/^(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?$/u)
+  if (!match) return false
+  const parsed = {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    rc: match[4] === undefined ? null : Number(match[4]),
+  }
+  for (const key of ['major', 'minor', 'patch']) {
+    if (parsed[key] !== NO_OPEN_MINIMUM[key]) return parsed[key] > NO_OPEN_MINIMUM[key]
+  }
+  return parsed.rc === null || parsed.rc >= NO_OPEN_MINIMUM.rc
 }
 
 function terminateChildProcess(child, {
@@ -344,7 +389,9 @@ module.exports = {
   findNextAvailablePort,
   isPortAvailable,
   probeLocalService,
+  resolveDshVersion,
   resolveDshExecutable,
+  supportsNoOpen,
   terminateChildProcess,
   waitForDshStop,
 }

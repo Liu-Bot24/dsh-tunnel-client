@@ -8,6 +8,7 @@ const {
   LocalPortOccupiedError,
   findNextAvailablePort,
   resolveDshExecutable,
+  supportsNoOpen,
   terminateChildProcess,
 } = require('../src/core/local-dsh-manager.cjs')
 
@@ -62,12 +63,13 @@ test('reports a missing DSH installation clearly', async () => {
   assert.equal(manager.getState().error, '本机未安装 DSH')
 })
 
-test('starts DSH with the requested port and no shell', async () => {
+test('starts DSH rc.8 and newer with no-open and no shell', async () => {
   const calls = []
   const child = fakeChild()
   let probeCount = 0
   const manager = new LocalDshManager({
     executable: '/example/dsh',
+    resolveVersion: () => '0.1.0-rc.8',
     cwd: '/example/home',
     probe: async () => child.killCalls.length > 0 ? 'free' : (probeCount++ === 0 ? 'free' : 'dsh'),
     spawnProcess: (command, args, options) => {
@@ -81,13 +83,41 @@ test('starts DSH with the requested port and no shell', async () => {
   assert.equal(state.state, 'running')
   assert.equal(state.owned, true)
   assert.equal(calls[0].command, '/example/dsh')
-  assert.deepEqual(calls[0].args, ['web', '--port', '3080'])
+  assert.deepEqual(calls[0].args, ['web', '--port', '3080', '--no-open'])
   assert.equal(calls[0].options.shell, false)
   assert.equal(calls[0].options.cwd, '/example/home')
 
   const stopped = await manager.stop()
   assert.equal(stopped.state, 'stopped')
   assert.equal(child.killCalls.length, 1)
+})
+
+test('keeps the legacy launch arguments for DSH rc.7', async () => {
+  const calls = []
+  const child = fakeChild()
+  let probeCount = 0
+  const manager = new LocalDshManager({
+    executable: '/example/dsh',
+    resolveVersion: () => '0.1.0-rc.7',
+    probe: async () => child.killCalls.length > 0 ? 'free' : (probeCount++ === 0 ? 'free' : 'dsh'),
+    spawnProcess: (command, args) => {
+      calls.push({ command, args })
+      return child
+    },
+    pollInterval: 1,
+  })
+
+  await manager.start(3080)
+  assert.deepEqual(calls[0].args, ['web', '--port', '3080'])
+  await manager.stop()
+})
+
+test('recognizes the exact no-open version boundary', () => {
+  assert.equal(supportsNoOpen('0.1.0-rc.7'), false)
+  assert.equal(supportsNoOpen('0.1.0-rc.8'), true)
+  assert.equal(supportsNoOpen('0.1.1-rc.1'), true)
+  assert.equal(supportsNoOpen('0.1.0'), true)
+  assert.equal(supportsNoOpen('unknown'), false)
 })
 
 test('coalesces concurrent starts for the same port and rejects a different port', async () => {
