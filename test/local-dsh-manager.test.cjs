@@ -38,6 +38,28 @@ test('recognizes an already-running DSH without taking ownership', async () => {
   await assert.rejects(() => manager.stop(), /由其他程序启动/)
 })
 
+test('emits local DSH state only when an inspection finds a real change', async () => {
+  let probeResult = 'free'
+  const manager = new LocalDshManager({ probe: async () => probeResult })
+  const events = []
+  manager.on('state', (state) => events.push(state))
+
+  await manager.inspect(3080)
+  await manager.inspect(3080)
+  assert.equal(events.length, 0)
+
+  probeResult = 'dsh'
+  await manager.inspect(3080)
+  await manager.inspect(3080)
+  assert.equal(events.length, 1)
+  assert.equal(events[0].state, 'running')
+
+  probeResult = 'free'
+  await manager.inspect(3080)
+  assert.equal(events.length, 2)
+  assert.equal(events[1].state, 'stopped')
+})
+
 test('rejects a port occupied by a non-DSH service', async () => {
   const manager = new LocalDshManager({ probe: async () => 'occupied' })
   await assert.rejects(

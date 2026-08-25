@@ -6,11 +6,13 @@ const { normalizeEndpoint, loopbackUrl } = require('./core/endpoint.cjs')
 const { SshPairingService } = require('./core/ssh-pairing.cjs')
 const { TunnelManager, endpointFingerprint } = require('./core/tunnel-manager.cjs')
 const { buildTrayMenuTemplate } = require('./core/tray-menu.cjs')
+const { CompanionPluginManager, PLUGIN_ARCHIVE } = require('./core/companion-plugin-manager.cjs')
 const {
   LocalDshManager,
   LocalPortOccupiedError,
   findNextAvailablePort,
   isPortAvailable,
+  resolveDshExecutable,
 } = require('./core/local-dsh-manager.cjs')
 
 app.enableSandbox()
@@ -23,6 +25,7 @@ let endpoints = []
 let settings
 let closing = false
 let localDsh
+let companionPlugin
 let endpointStore
 let settingsStore
 let sshPairing
@@ -147,11 +150,15 @@ async function openLocalDshEndpoint() {
   return openLocalDsh(port)
 }
 
+async function inspectCurrentLocalDsh() {
+  const port = localEndpoint()?.remotePort ?? localDsh.getState().port ?? 3080
+  return localDsh.inspect(port)
+}
+
 function registerIpc(endpointStore, settingsStore) {
   ipcMain.handle('endpoints:list', async (event) => {
     assertSender(event)
-    const port = localEndpoint()?.remotePort ?? localDsh.getState().port ?? 3080
-    const localState = await localDsh.inspect(port)
+    const localState = await inspectCurrentLocalDsh()
     endpoints = [
       ...endpoints.filter((entry) => entry.mode === 'local'),
       ...endpoints.filter((entry) => entry.mode !== 'local'),
@@ -203,6 +210,22 @@ function registerIpc(endpointStore, settingsStore) {
     settings = settingsStore.save(input)
     mainWindow?.setBackgroundColor(themeBackgrounds[settings.theme])
     return settings
+  })
+
+  ipcMain.handle('companion-plugin:status', async (event) => {
+    assertSender(event)
+    return companionPlugin.inspect(await inspectCurrentLocalDsh())
+  })
+
+  ipcMain.handle('companion-plugin:install', async (event) => {
+    assertSender(event)
+    return companionPlugin.install(await inspectCurrentLocalDsh())
+  })
+
+  ipcMain.handle('companion-plugin:show-package', (event) => {
+    assertSender(event)
+    shell.showItemInFolder(companionPlugin.getPackagePath())
+    return true
   })
 
   ipcMain.handle('tunnels:start', async (event, id) => {
@@ -395,6 +418,19 @@ app.whenReady().then(async () => {
     identityFile: sshPairing.identityFile,
   })
   localDsh = new LocalDshManager({ cwd: app.getPath('home') })
+  companionPlugin = new CompanionPluginManager({
+    homeDirectory: app.getPath('home'),
+    dshExecutable: resolveDshExecutable(),
+    packagePath: app.isPackaged
+      ? path.join(process.resourcesPath, 'plugins', PLUGIN_ARCHIVE)
+      : path.join(__dirname, '..', 'resources', 'plugins', PLUGIN_ARCHIVE),
+    toolDirectory: app.isPackaged
+      ? path.join(process.resourcesPath, 'plugin-tools')
+      : path.join(__dirname, '..', 'resources', 'plugin-tools'),
+    pnpmScriptPath: app.isPackaged
+      ? path.join(process.resourcesPath, 'pnpm', 'bin', 'pnpm.cjs')
+      : path.join(__dirname, '..', 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
+  })
   const defaultLocal = normalizeEndpoint({
     id: 'local-dsh',
     mode: 'local',

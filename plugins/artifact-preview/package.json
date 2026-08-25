@@ -1,0 +1,56 @@
+{
+  "name": "dsh-plugin-artifact-preview",
+  "version": "0.1.4",
+  "description": "Safely preview remote DSH HTML and SVG deliverables in the controlling browser.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "LICENSE",
+    "src",
+    "scripts/build.mjs"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-deliverables"
+      ],
+      "platform": "web"
+    }
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "check": "node --check index.js && node --check client.js && node --check src/host-rpc.mjs && node --check src/safe-reader.mjs && node --check src/session-root.mjs",
+    "test": "node --test",
+    "prepack": "npm run build && npm run check && npm test"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "artifact-preview",
+    "ssh-tunnel"
+  ],
+  "license": "MIT",
+  "dshCompatibility": {
+    "version": "0.1.0-rc.7",
+    "surface": "web"
+  }
+}

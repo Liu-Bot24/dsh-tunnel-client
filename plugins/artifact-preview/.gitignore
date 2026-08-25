@@ -1,7 +1,7 @@
 node_modules/
 dist/
 out/
-resources/plugins/*.tgz
 *.log
+*.tgz
 .DS_Store
 DEVELOPMENT_LOG.md

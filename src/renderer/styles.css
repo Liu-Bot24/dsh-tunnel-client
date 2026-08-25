@@ -498,6 +498,23 @@ input:focus { border-color: var(--accent-color); box-shadow: 0 0 0 3px color-mix
 .phosphor-preview { background: #050806; }.phosphor-preview i:first-child { background: #08100b; }.phosphor-preview i:nth-child(2) { background: repeating-linear-gradient(0deg, #071009 0 4px, #275c3a 5px); }.phosphor-preview i:nth-child(3) { background: #82f39a; }
 .signal-preview { background: #f1eedf; }.signal-preview i:first-child { background: #1554d1; }.signal-preview i:nth-child(2) { background: #ffd524; }.signal-preview i:nth-child(3) { background: #e43428; }
 .porcelain-preview { background: #fbfafd; }.porcelain-preview i:first-child { background: #eeeaf5; }.porcelain-preview i:nth-child(2) { background: #ffffff; }.porcelain-preview i:nth-child(3) { background: #6f6192; }
+.plugin-settings {
+  display: grid;
+  gap: 11px;
+  padding: 15px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-medium);
+  background: var(--surface-bg);
+}
+.plugin-settings-heading { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
+.plugin-settings h3 { margin: 0; color: var(--text-color); font-size: 13px; }
+.plugin-settings-heading p { max-width: 520px; margin: 5px 0 0; color: var(--muted-color); font-size: 9px; line-height: 1.55; }
+.plugin-version { flex: none; color: var(--accent-color); font: 9px/1.4 var(--mono-font); }
+.plugin-status { margin: 0; color: var(--text-color); font-size: 10px; font-weight: 700; }
+.plugin-status[data-kind="error"] { color: var(--danger-color); }
+.plugin-status[data-kind="success"] { color: var(--success-color); }
+.plugin-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.plugin-note { color: var(--muted-color); font-size: 9px; line-height: 1.5; }
 
 /* 深海鲸歌 */
 html[data-theme="whale-song"] .detail-pane { background: radial-gradient(circle at 88% 12%, rgba(48, 148, 166, .19), transparent 36%), var(--detail-bg); }
@@ -553,7 +570,16 @@ html[data-theme="bauhaus-signal"] .signal-square { display: block; right: 120px;
 /* 柔雾器物 */
 html[data-theme="soft-porcelain"] .detail-pane { background: radial-gradient(circle at 90% 10%, rgba(178, 204, 216, .23), transparent 32%), var(--detail-bg); }
 html[data-theme="soft-porcelain"] .whale-decoration { display: block; right: -22px; bottom: -30px; width: min(45%, 360px); opacity: .055; transform: rotate(6deg); }
-html[data-theme="soft-porcelain"] .endpoint-sidebar::after { content: ""; position: absolute; left: -60px; bottom: -52px; width: 200px; height: 130px; border: 22px solid rgba(115,157,181,.11); border-radius: 50%; transform: rotate(-14deg); pointer-events: none; }
+html[data-theme="soft-porcelain"] .endpoint-sidebar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 200px;
+  height: 130px;
+  background: radial-gradient(ellipse at -18px 142px, transparent 72px, rgba(115,157,181,.11) 73px 94px, transparent 95px);
+  pointer-events: none;
+}
 html[data-theme="soft-porcelain"] .detail-group { backdrop-filter: blur(6px); }
 
 @keyframes whale-drift {

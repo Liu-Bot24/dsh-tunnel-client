@@ -26,6 +26,12 @@ const pairingDialog = document.querySelector('#pairing-dialog')
 const pairingForm = document.querySelector('#pairing-form')
 const settingsDialog = document.querySelector('#settings-dialog')
 const settingsForm = document.querySelector('#settings-form')
+const pluginFields = {
+  version: document.querySelector('#plugin-version'),
+  status: document.querySelector('#plugin-status'),
+  install: document.querySelector('#install-plugin'),
+  showPackage: document.querySelector('#show-plugin-package'),
+}
 const deleteButton = document.querySelector('#delete-endpoint')
 const saveButton = document.querySelector('#save-endpoint')
 const sshFieldsElement = document.querySelector('#ssh-fields')
@@ -75,6 +81,8 @@ let endpoints = []
 let selectedEndpointId = null
 let settings = { theme: 'whale-song' }
 let settingsCommitted = false
+let companionPluginState = null
+let companionPluginBusy = false
 let noticeTimer = null
 let pendingPairing = null
 let localDshState = { state: 'stopped', port: 3080, owned: false, error: null }
@@ -359,12 +367,58 @@ async function deleteEndpoint(endpoint) {
   }
 }
 
+function renderCompanionPlugin() {
+  const state = companionPluginState
+  pluginFields.version.textContent = state ? `随附 v${state.bundledVersion}` : ''
+  pluginFields.status.dataset.kind = ''
+  if (companionPluginBusy) {
+    pluginFields.status.textContent = '正在安装并验证…'
+  } else if (!state) {
+    pluginFields.status.textContent = '正在检查…'
+  } else if (!state.packageAvailable) {
+    pluginFields.status.textContent = '随附安装包不可用，请重新安装 DSH Tunnel。'
+    pluginFields.status.dataset.kind = 'error'
+  } else if (state.state === 'installed') {
+    pluginFields.status.textContent = `已安装 v${state.installedVersion}。`
+    pluginFields.status.dataset.kind = 'success'
+  } else if (state.state === 'newer') {
+    pluginFields.status.textContent = `已安装 v${state.installedVersion}，高于客户端随附版本，不会覆盖。`
+    pluginFields.status.dataset.kind = 'success'
+  } else if (state.state === 'outdated') {
+    pluginFields.status.textContent = `已安装 v${state.installedVersion}，可以更新至 v${state.bundledVersion}。`
+  } else {
+    pluginFields.status.textContent = '这台电脑尚未安装该插件。'
+  }
+  if (state?.blockedByRunningDsh && !['installed', 'newer'].includes(state.state)) {
+    pluginFields.status.textContent += ' 请先停止本机 DSH。'
+  }
+  pluginFields.install.textContent = state?.state === 'outdated' ? '更新插件' : '安装插件'
+  const hasInstallableVersion = ['missing', 'outdated'].includes(state?.state)
+  pluginFields.install.disabled = companionPluginBusy || !state?.packageAvailable || !hasInstallableVersion
+  pluginFields.showPackage.disabled = companionPluginBusy || !state?.packageAvailable
+}
+
+async function refreshCompanionPlugin() {
+  try {
+    companionPluginState = await window.dshTunnel.inspectCompanionPlugin()
+    renderCompanionPlugin()
+  } catch (error) {
+    companionPluginState = null
+    renderCompanionPlugin()
+    pluginFields.status.textContent = userMessage(error, '无法读取配套插件状态')
+    pluginFields.status.dataset.kind = 'error'
+  }
+}
+
 function openSettings() {
   settingsCommitted = false
   const selected = settingsForm.querySelector(`input[name="theme"][value="${settings.theme}"]`)
   if (selected) selected.checked = true
   applyTheme(settings.theme)
+  companionPluginState = null
+  renderCompanionPlugin()
   settingsDialog.showModal()
+  refreshCompanionPlugin()
 }
 
 function cancelSettings() {
@@ -419,7 +473,30 @@ document.querySelector('#close-pairing').addEventListener('click', closePairing)
 document.querySelector('#cancel-pairing').addEventListener('click', closePairing)
 document.querySelector('#close-settings').addEventListener('click', cancelSettings)
 document.querySelector('#cancel-settings').addEventListener('click', cancelSettings)
-
+pluginFields.install.addEventListener('click', async () => {
+  companionPluginBusy = true
+  renderCompanionPlugin()
+  try {
+    companionPluginState = await window.dshTunnel.installCompanionPlugin()
+    companionPluginBusy = false
+    renderCompanionPlugin()
+    pluginFields.status.textContent = `已安装 v${companionPluginState.installedVersion}，下次启动 DSH 时生效。`
+    pluginFields.status.dataset.kind = 'success'
+  } catch (error) {
+    companionPluginBusy = false
+    await refreshCompanionPlugin()
+    pluginFields.status.textContent = userMessage(error, '插件安装失败')
+    pluginFields.status.dataset.kind = 'error'
+  }
+})
+pluginFields.showPackage.addEventListener('click', async () => {
+  try {
+    await window.dshTunnel.showCompanionPluginPackage()
+  } catch (error) {
+    pluginFields.status.textContent = userMessage(error, '无法显示插件包')
+    pluginFields.status.dataset.kind = 'error'
+  }
+})
 editButton.addEventListener('click', () => {
   const endpoint = selectedEndpoint()
   if (endpoint) editEndpoint(endpoint)
@@ -535,6 +612,7 @@ window.dshTunnel.onTunnelState((state) => {
 window.dshTunnel.onLocalDshState((state) => {
   localDshState = state
   render()
+  if (settingsDialog.open && !companionPluginBusy) refreshCompanionPlugin()
 })
 
 window.dshTunnel.onEndpointsChanged((nextEndpoints) => {

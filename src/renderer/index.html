@@ -225,6 +225,21 @@
             <span><strong>柔雾器物</strong><small>浅色陶瓷质感</small></span>
           </label>
         </fieldset>
+        <section class="plugin-settings" aria-labelledby="plugin-settings-title">
+          <div class="plugin-settings-heading">
+            <div>
+              <h3 id="plugin-settings-title">远程产物预览插件</h3>
+              <p>当这台电脑作为远程 DSH 主机时，让操作端直接预览会话生成的 HTML、HTM 和 SVG。</p>
+            </div>
+            <span id="plugin-version" class="plugin-version"></span>
+          </div>
+          <p id="plugin-status" class="plugin-status" role="status">正在检查…</p>
+          <div class="plugin-actions">
+            <button id="install-plugin" class="button primary" type="button">安装插件</button>
+            <button id="show-plugin-package" class="button secondary" type="button">查看插件包</button>
+          </div>
+          <small class="plugin-note">安装或更新前需要先停止这台电脑上的 DSH。远程设备不会被客户端静默修改。</small>
+        </section>
         <div class="dialog-actions">
           <button id="cancel-settings" class="button secondary" type="button">取消</button>
           <button class="button primary" type="submit">保存主题</button>

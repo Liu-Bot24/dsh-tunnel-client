@@ -25,6 +25,9 @@ const outputPaths = await packager({
   extraResource: [
     path.join(projectDirectory, 'resources', 'trayTemplate.png'),
     path.join(projectDirectory, 'resources', 'trayTemplate@2x.png'),
+    path.join(projectDirectory, 'resources', 'plugins'),
+    path.join(projectDirectory, 'resources', 'plugin-tools'),
+    path.join(projectDirectory, 'node_modules', 'pnpm'),
   ],
   out: path.join(projectDirectory, 'dist'),
   overwrite: true,

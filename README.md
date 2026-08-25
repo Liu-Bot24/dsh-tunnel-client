@@ -71,6 +71,43 @@ shasum -a 256 -c DSH.Tunnel-<版本>-macos-arm64.dmg.sha256
 
 当前 Windows 安装包尚未使用受信任的代码签名证书，系统可能显示“未知发布者”提示。
 
+## 远程产物预览插件
+
+DSH Artifact Preview 是 DSH Tunnel 的配套插件，不是独立应用。DSH Tunnel 负责建立 SSH 隧道并标记远程 WebUI，插件安装在实际运行 DSH 的设备上，负责安全读取会话生成的 HTML、HTM 和 SVG 产物，让你点击远程会话底部的“产物”文件名时，直接在当前操作设备的浏览器中预览。
+
+插件不会改变本机 DSH 页面，也不会接管回复正文里的文件链接；图片、文本和其他文件继续使用 DSH 原有行为。预览仅允许读取会话工作目录内不超过 5 MiB 的普通 UTF-8 文件，并禁止预览内容访问外部网络、提交表单、打开弹窗、跳转顶层页面或触发下载。
+
+### 安装位置
+
+插件必须安装在运行目标 DSH 的设备上，而不是只安装在当前操作设备上。例如：
+
+- 在 Mac 上通过 DSH Tunnel 连接 Windows DSH：插件安装到 Windows。
+- 在 Windows 上通过 DSH Tunnel 连接 Mac DSH：插件安装到 Mac。
+- 只使用本机 DSH：无需为产物预览安装该插件，本机页面保持 DSH 原有行为。
+
+### 安装
+
+客户端在“设置 → 远程产物预览插件”中显示本机安装状态。本机 DSH 停止后，可以点击“安装插件”或“更新插件”；客户端只会修改当前设备的 DSH `web` profile，不会静默改写远程设备。
+
+需要安装到另一台设备时，优先在那台设备上打开 DSH Tunnel 并点击“安装插件”。也可以手动安装：
+
+1. 从与 DSH Tunnel 版本对应的 [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest) 下载 `dsh-plugin-artifact-preview-0.1.4.tgz`。
+2. 在运行目标 DSH 的设备上执行：
+
+```bash
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.4.tgz
+```
+
+3. 重启该设备上的 DSH。
+
+卸载插件：
+
+```bash
+dsh plugin --profile web remove dsh-plugin-artifact-preview
+```
+
+插件源码随主项目维护在 [`plugins/artifact-preview`](plugins/artifact-preview) 目录中。
+
 ## 使用要求
 
 - 系统中存在可用的 OpenSSH 客户端

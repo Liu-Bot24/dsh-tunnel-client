@@ -64,7 +64,10 @@ class LocalDshManager extends EventEmitter {
   }
 
   setState(next) {
-    this.state = Object.freeze({ ...this.state, ...next })
+    const updated = { ...this.state, ...next }
+    const unchanged = Object.keys(updated).every((key) => Object.is(updated[key], this.state[key]))
+    if (unchanged) return this.state
+    this.state = Object.freeze(updated)
     this.emit('state', this.state)
     return this.state
   }

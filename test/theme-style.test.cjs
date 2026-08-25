@@ -55,6 +55,14 @@ test('theme font stacks include explicit Chinese fallbacks', () => {
   }
 })
 
+test('soft porcelain sidebar decoration stays inside the scroll container', () => {
+  const rule = css.match(/html\[data-theme="soft-porcelain"\] \.endpoint-sidebar::after \{([\s\S]*?)\n\}/)?.[1]
+  assert.ok(rule, 'missing soft porcelain sidebar decoration')
+  assert.doesNotMatch(rule, /(?:left|right|top|bottom):\s*-/u)
+  assert.match(rule, /left:\s*0/u)
+  assert.match(rule, /bottom:\s*0/u)
+})
+
 test('localized READMEs include optimized JPEG screenshots for every theme', () => {
   const readme = fs.readFileSync(path.join(projectRoot, 'README.md'), 'utf8')
   const readmeEn = fs.readFileSync(path.join(projectRoot, 'README.en.md'), 'utf8')
@@ -140,4 +148,30 @@ test('Windows package uses the whale icon and produces installer and portable ar
   assert.match(packageJson.scripts['package:win'], /nsis portable/)
   assert.equal(packageJson.build.nsis.artifactName, 'DSH-Tunnel-Setup-${version}-${arch}.${ext}')
   assert.equal(packageJson.build.portable.artifactName, 'DSH-Tunnel-Portable-${version}-${arch}.${ext}')
+})
+
+test('desktop packages bundle the plugin installer runtime instead of relying on a terminal PATH', () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'))
+  const macPackager = fs.readFileSync(path.join(projectRoot, 'scripts/package-mac.mjs'), 'utf8')
+  const macWrapper = fs.readFileSync(path.join(projectRoot, 'resources/plugin-tools/pnpm'), 'utf8')
+  const windowsWrapper = fs.readFileSync(path.join(projectRoot, 'resources/plugin-tools/pnpm.cmd'), 'utf8')
+  assert.equal(packageJson.dependencies.pnpm, '11.19.0')
+  assert.ok(packageJson.build.extraResources.some((entry) => entry.from === 'node_modules/pnpm' && entry.to === 'pnpm'))
+  assert.ok(packageJson.build.extraResources.some((entry) => entry.from === 'resources/plugin-tools' && entry.to === 'plugin-tools'))
+  assert.match(macPackager, /node_modules', 'pnpm'/)
+  assert.match(macPackager, /resources', 'plugin-tools'/)
+  assert.match(macWrapper, /DSH_TUNNEL_PNPM_PATH/)
+  assert.match(windowsWrapper, /DSH_TUNNEL_PNPM_PATH/)
+})
+
+test('companion plugin actions refresh the real local DSH state before deciding whether installation is allowed', () => {
+  const mainProcess = fs.readFileSync(path.join(projectRoot, 'src/main.cjs'), 'utf8')
+  const renderer = fs.readFileSync(path.join(projectRoot, 'src/renderer/app.js'), 'utf8')
+
+  assert.match(mainProcess, /async function inspectCurrentLocalDsh\(\)[\s\S]*localDsh\.inspect\(port\)/)
+  assert.match(mainProcess, /companion-plugin:status[\s\S]*companionPlugin\.inspect\(await inspectCurrentLocalDsh\(\)\)/)
+  assert.match(mainProcess, /companion-plugin:install[\s\S]*companionPlugin\.install\(await inspectCurrentLocalDsh\(\)\)/)
+  assert.doesNotMatch(mainProcess, /companionPlugin\.(?:inspect|install)\(localDsh\.getState\(\)\)/)
+  assert.match(renderer, /hasInstallableVersion = \['missing', 'outdated'\]\.includes\(state\?\.state\)/)
+  assert.doesNotMatch(renderer, /install\.disabled = companionPluginBusy \|\| !state\?\.canInstall/)
 })

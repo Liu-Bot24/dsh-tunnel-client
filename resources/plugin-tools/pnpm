@@ -1,0 +1,2 @@
+#!/bin/sh
+exec node "$DSH_TUNNEL_PNPM_PATH" "$@"

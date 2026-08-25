@@ -1,0 +1,3 @@
+- insert:
+    - id: artifact-preview
+      name: dsh-plugin-artifact-preview
