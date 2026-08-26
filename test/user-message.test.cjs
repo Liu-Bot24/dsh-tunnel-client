@@ -28,7 +28,10 @@ test('covers actual local DSH and port errors with and without an IPC wrapper', 
   const messages = [
     '本地端口 3080 已被其他程序占用',
     'DSH 停止失败',
+    'DSH Web 配置初始化失败',
     '请先断开连接，再修改连接设置',
+    'DSH 下载失败，请检查网络连接',
+    '未找到 npx，请先安装 Node.js',
   ]
   for (const message of messages) {
     assert.equal(userMessage(new Error(message)), message)

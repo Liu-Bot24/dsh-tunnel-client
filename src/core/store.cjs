@@ -11,6 +11,8 @@ const SUPPORTED_THEMES = Object.freeze([
   'soft-porcelain',
 ])
 const DEFAULT_THEME = 'whale-song'
+const DEFAULT_DSH_RUNTIME = 'official-npx'
+const SUPPORTED_DSH_RUNTIMES = Object.freeze([DEFAULT_DSH_RUNTIME, 'system'])
 
 class EndpointStore {
   constructor(filename, { fileSystem = fs } = {}) {
@@ -135,7 +137,9 @@ function normalizeSettings(input) {
   }
   const theme = input.theme ?? DEFAULT_THEME
   if (!SUPPORTED_THEMES.includes(theme)) throw new Error('这个主题不可用')
-  return { theme }
+  const dshRuntime = input.dshRuntime ?? DEFAULT_DSH_RUNTIME
+  if (!SUPPORTED_DSH_RUNTIMES.includes(dshRuntime)) throw new Error('这个 DSH 运行方式不可用')
+  return { theme, dshRuntime }
 }
 
 function writeJson(filename, value, fileSystem = fs) {
@@ -164,9 +168,11 @@ function assertUnique(endpoints, { requireLocal = false } = {}) {
 }
 
 module.exports = {
+  DEFAULT_DSH_RUNTIME,
   DEFAULT_THEME,
   EndpointStore,
   SettingsStore,
+  SUPPORTED_DSH_RUNTIMES,
   SUPPORTED_THEMES,
   assertUnique,
   normalizeSettings,

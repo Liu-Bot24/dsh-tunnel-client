@@ -27,6 +27,7 @@ const outputPaths = await packager({
     path.join(projectDirectory, 'resources', 'trayTemplate@2x.png'),
     path.join(projectDirectory, 'resources', 'plugins'),
     path.join(projectDirectory, 'resources', 'plugin-tools'),
+    path.join(projectDirectory, 'resources', 'dsh-runner'),
     path.join(projectDirectory, 'node_modules', 'pnpm'),
   ],
   out: path.join(projectDirectory, 'dist'),

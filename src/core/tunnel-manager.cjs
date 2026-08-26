@@ -64,6 +64,7 @@ class TunnelManager extends EventEmitter {
     spawnImpl = spawn,
     waitForReady = waitForHttp,
     assertPortAvailable = assertLocalPortAvailable,
+    forceTerminateProcess = forceTerminateTunnelProcess,
     sshCommand = 'ssh',
     identityFile = null,
     stopTimeoutMs = 1_000,
@@ -73,6 +74,7 @@ class TunnelManager extends EventEmitter {
     this.spawnImpl = spawnImpl
     this.waitForReady = waitForReady
     this.assertPortAvailable = assertPortAvailable
+    this.forceTerminateProcess = forceTerminateProcess
     this.sshCommand = sshCommand
     this.identityFile = identityFile
     this.stopTimeoutMs = stopTimeoutMs
@@ -182,16 +184,16 @@ class TunnelManager extends EventEmitter {
       this.#emit(record)
       return this.#view(record)
     } catch (error) {
+      let cleanupError = null
       if (record.child && !record.exited) {
         record.intentionalStop = true
-        record.child.kill()
-        await Promise.race([record.exitPromise ?? Promise.resolve(), delay(this.stopTimeoutMs)])
+        if (!(await this.#terminateChild(record))) cleanupError = new TunnelStopError(record.endpoint.id)
       }
       if (!record.child || record.exited) this.#releasePort(record)
-      record.state = record.stopRequested ? 'stopped' : 'error'
-      record.error = record.stopRequested ? null : error.message
+      record.state = record.stopRequested && !cleanupError ? 'stopped' : 'error'
+      record.error = record.stopRequested && !cleanupError ? null : (cleanupError?.message ?? error.message)
       this.#emit(record)
-      throw error
+      throw cleanupError ?? error
     } finally {
       record.startPromise = null
     }
@@ -220,8 +222,7 @@ class TunnelManager extends EventEmitter {
       }
     }
 
-    record.child.kill()
-    const stopped = await this.#waitForExit(record)
+    const stopped = await this.#terminateChild(record)
     if (!stopped) {
       const error = new TunnelStopError(id)
       record.state = 'error'
@@ -242,6 +243,18 @@ class TunnelManager extends EventEmitter {
       await delay(this.pollIntervalMs)
     }
     return record.exited
+  }
+
+  async #terminateChild(record) {
+    if (!record.child || record.exited) return true
+    record.child.kill()
+    if (await this.#waitForExit(record)) return true
+    try {
+      await this.forceTerminateProcess(record.child)
+    } catch {
+      return false
+    }
+    return this.#waitForExit(record)
   }
 
   #isActive(record) {
@@ -271,6 +284,33 @@ class TunnelManager extends EventEmitter {
   }
 }
 
+function forceTerminateTunnelProcess(child, {
+  platform = process.platform,
+  spawnProcess = spawn,
+} = {}) {
+  if (platform !== 'win32') {
+    child.kill('SIGKILL')
+    return Promise.resolve()
+  }
+  if (!Number.isInteger(child.pid)) return Promise.reject(new Error('SSH 进程标识不可用'))
+  return new Promise((resolve, reject) => {
+    const killer = spawnProcess('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], {
+      shell: false,
+      windowsHide: true,
+      stdio: ['ignore', 'ignore', 'pipe'],
+    })
+    let stderr = ''
+    killer.stderr?.on('data', (chunk) => {
+      stderr = `${stderr}${String(chunk)}`.slice(-4096)
+    })
+    killer.once('error', reject)
+    killer.once('exit', (code) => {
+      if (code === 0) resolve()
+      else reject(new Error(stderr.trim() || '无法强制终止 SSH 进程树'))
+    })
+  })
+}
+
 function tunnelExitMessage(code, signal, stderr) {
   const diagnostic = stderr.toLowerCase()
   if (diagnostic.includes('permission denied')) return 'SSH 认证失败'
@@ -290,6 +330,7 @@ module.exports = {
   TunnelStopError,
   assertLocalPortAvailable,
   endpointFingerprint,
+  forceTerminateTunnelProcess,
   tunnelExitMessage,
   waitForHttp,
 }

@@ -26,10 +26,13 @@ const pairingDialog = document.querySelector('#pairing-dialog')
 const pairingForm = document.querySelector('#pairing-form')
 const settingsDialog = document.querySelector('#settings-dialog')
 const settingsForm = document.querySelector('#settings-form')
+const runtimeStatusElement = document.querySelector('#runtime-status')
+const installedDshDetailElement = document.querySelector('#installed-dsh-detail')
 const pluginFields = {
   version: document.querySelector('#plugin-version'),
   status: document.querySelector('#plugin-status'),
   install: document.querySelector('#install-plugin'),
+  uninstall: document.querySelector('#uninstall-plugin'),
   showPackage: document.querySelector('#show-plugin-package'),
 }
 const deleteButton = document.querySelector('#delete-endpoint')
@@ -79,10 +82,11 @@ const pairingFields = {
 
 let endpoints = []
 let selectedEndpointId = null
-let settings = { theme: 'whale-song' }
+let settings = { theme: 'whale-song', dshRuntime: 'official-npx' }
 let settingsCommitted = false
 let companionPluginState = null
 let companionPluginBusy = false
+let dshRuntimeStatus = null
 let noticeTimer = null
 let pendingPairing = null
 let localDshState = { state: 'stopped', port: 3080, owned: false, error: null }
@@ -371,8 +375,10 @@ function renderCompanionPlugin() {
   const state = companionPluginState
   pluginFields.version.textContent = state ? `随附 v${state.bundledVersion}` : ''
   pluginFields.status.dataset.kind = ''
-  if (companionPluginBusy) {
+  if (companionPluginBusy === 'install') {
     pluginFields.status.textContent = '正在安装并验证…'
+  } else if (companionPluginBusy === 'uninstall') {
+    pluginFields.status.textContent = '正在卸载并验证…'
   } else if (!state) {
     pluginFields.status.textContent = '正在检查…'
   } else if (!state.packageAvailable) {
@@ -386,15 +392,26 @@ function renderCompanionPlugin() {
     pluginFields.status.dataset.kind = 'success'
   } else if (state.state === 'outdated') {
     pluginFields.status.textContent = `已安装 v${state.installedVersion}，可以更新至 v${state.bundledVersion}。`
+  } else if (state.state === 'inactive') {
+    pluginFields.status.textContent = `已安装 v${state.installedVersion}，尚未启用。`
+  } else if (state.state === 'broken') {
+    pluginFields.status.textContent = '插件配置不完整，可以重新安装或卸载。'
+    pluginFields.status.dataset.kind = 'error'
   } else {
     pluginFields.status.textContent = '这台电脑尚未安装该插件。'
   }
   if (state?.blockedByRunningDsh && !['installed', 'newer'].includes(state.state)) {
     pluginFields.status.textContent += ' 请先停止本机 DSH。'
   }
-  pluginFields.install.textContent = state?.state === 'outdated' ? '更新插件' : '安装插件'
-  const hasInstallableVersion = ['missing', 'outdated'].includes(state?.state)
-  pluginFields.install.disabled = companionPluginBusy || !state?.packageAvailable || !hasInstallableVersion
+  pluginFields.install.textContent = state?.state === 'outdated'
+    ? '更新插件'
+    : state?.state === 'inactive'
+      ? '启用插件'
+      : state?.state === 'broken'
+        ? '重新安装'
+        : '安装插件'
+  pluginFields.install.disabled = companionPluginBusy || !state?.canInstall
+  pluginFields.uninstall.disabled = companionPluginBusy || !state?.canUninstall
   pluginFields.showPackage.disabled = companionPluginBusy || !state?.packageAvailable
 }
 
@@ -410,14 +427,63 @@ async function refreshCompanionPlugin() {
   }
 }
 
+async function refreshDshRuntimeStatus() {
+  runtimeStatusElement.dataset.kind = ''
+  try {
+    dshRuntimeStatus = await window.dshTunnel.getDshRuntimeStatus()
+    renderDshRuntimeStatus()
+  } catch (error) {
+    dshRuntimeStatus = null
+    setRuntimeOptionDisabled('official-npx', true)
+    setRuntimeOptionDisabled('system', true)
+    runtimeStatusElement.textContent = userMessage(error, '无法读取 DSH 运行方式')
+    runtimeStatusElement.dataset.kind = 'error'
+  }
+}
+
+function localDshIsBusy() {
+  return Boolean(localDshState?.owned)
+    || ['running', 'starting', 'stopping'].includes(localDshState?.state)
+}
+
+function setRuntimeOptionDisabled(value, disabled) {
+  const input = settingsForm.querySelector(`input[name="dsh-runtime"][value="${value}"]`)
+  input.disabled = disabled
+  input.closest('.runtime-option')?.classList.toggle('is-disabled', disabled)
+}
+
+function renderDshRuntimeStatus() {
+  if (!dshRuntimeStatus) return
+  const installedAvailable = Boolean(dshRuntimeStatus.installed?.available)
+  const busy = localDshIsBusy()
+  setRuntimeOptionDisabled('official-npx', busy)
+  setRuntimeOptionDisabled('system', busy || !installedAvailable)
+  installedDshDetailElement.textContent = installedAvailable
+    ? `已检测到 v${dshRuntimeStatus.installed.version}，使用现有 dsh 命令。`
+    : '未检测到本机 dsh 命令。'
+  const current = dshRuntimeStatus.mode === 'system'
+    ? `当前使用：本机已安装的 DSH v${dshRuntimeStatus.version}`
+    : '当前使用：npx 按需运行（自动跟随 latest）'
+  runtimeStatusElement.textContent = busy
+    ? `${current}；停止本机 DSH 后可切换运行方式。`
+    : current
+}
+
 function openSettings() {
   settingsCommitted = false
   const selected = settingsForm.querySelector(`input[name="theme"][value="${settings.theme}"]`)
   if (selected) selected.checked = true
+  const runtime = settingsForm.querySelector(`input[name="dsh-runtime"][value="${settings.dshRuntime}"]`)
+  if (runtime) runtime.checked = true
+  dshRuntimeStatus = null
+  setRuntimeOptionDisabled('official-npx', true)
+  setRuntimeOptionDisabled('system', true)
+  installedDshDetailElement.textContent = '正在检测本机 DSH…'
   applyTheme(settings.theme)
   companionPluginState = null
   renderCompanionPlugin()
   settingsDialog.showModal()
+  refreshDshRuntimeStatus()
   refreshCompanionPlugin()
 }
 
@@ -474,7 +540,7 @@ document.querySelector('#cancel-pairing').addEventListener('click', closePairing
 document.querySelector('#close-settings').addEventListener('click', cancelSettings)
 document.querySelector('#cancel-settings').addEventListener('click', cancelSettings)
 pluginFields.install.addEventListener('click', async () => {
-  companionPluginBusy = true
+  companionPluginBusy = 'install'
   renderCompanionPlugin()
   try {
     companionPluginState = await window.dshTunnel.installCompanionPlugin()
@@ -486,6 +552,22 @@ pluginFields.install.addEventListener('click', async () => {
     companionPluginBusy = false
     await refreshCompanionPlugin()
     pluginFields.status.textContent = userMessage(error, '插件安装失败')
+    pluginFields.status.dataset.kind = 'error'
+  }
+})
+pluginFields.uninstall.addEventListener('click', async () => {
+  companionPluginBusy = 'uninstall'
+  renderCompanionPlugin()
+  try {
+    companionPluginState = await window.dshTunnel.uninstallCompanionPlugin()
+    companionPluginBusy = false
+    renderCompanionPlugin()
+    pluginFields.status.textContent = '插件已卸载，下次启动 DSH 时生效。'
+    pluginFields.status.dataset.kind = 'success'
+  } catch (error) {
+    companionPluginBusy = false
+    await refreshCompanionPlugin()
+    pluginFields.status.textContent = userMessage(error, '插件卸载失败')
     pluginFields.status.dataset.kind = 'error'
   }
 })
@@ -587,16 +669,17 @@ settingsForm.addEventListener('change', (event) => {
 settingsForm.addEventListener('submit', async (event) => {
   event.preventDefault()
   const selected = settingsForm.querySelector('input[name="theme"]:checked')
-  if (!selected) return
+  const runtime = settingsForm.querySelector('input[name="dsh-runtime"]:checked')
+  if (!selected || !runtime) return
   try {
-    settings = await window.dshTunnel.saveSettings({ theme: selected.value })
+    settings = await window.dshTunnel.saveSettings({ theme: selected.value, dshRuntime: runtime.value })
     settingsCommitted = true
     applyTheme(settings.theme)
     settingsDialog.close()
-    showNotice(`已切换为“${themeLabels[settings.theme]}”`, 'success')
+    showNotice('设置已保存', 'success')
   } catch (error) {
     applyTheme(settings.theme)
-    showNotice(userMessage(error, '主题保存失败'))
+    showNotice(userMessage(error, '设置保存失败'))
   }
 })
 settingsDialog.addEventListener('close', () => {
@@ -612,7 +695,10 @@ window.dshTunnel.onTunnelState((state) => {
 window.dshTunnel.onLocalDshState((state) => {
   localDshState = state
   render()
-  if (settingsDialog.open && !companionPluginBusy) refreshCompanionPlugin()
+  if (settingsDialog.open) {
+    renderDshRuntimeStatus()
+    if (!companionPluginBusy) refreshCompanionPlugin()
+  }
 })
 
 window.dshTunnel.onEndpointsChanged((nextEndpoints) => {

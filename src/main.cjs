@@ -1,19 +1,20 @@
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell, Tray } = require('electron')
-const { DEFAULT_THEME, EndpointStore, SettingsStore } = require('./core/store.cjs')
+const { DEFAULT_DSH_RUNTIME, DEFAULT_THEME, EndpointStore, SettingsStore, normalizeSettings } = require('./core/store.cjs')
 const { normalizeEndpoint, loopbackUrl } = require('./core/endpoint.cjs')
 const { SshPairingService } = require('./core/ssh-pairing.cjs')
 const { TunnelManager, endpointFingerprint } = require('./core/tunnel-manager.cjs')
 const { buildTrayMenuTemplate } = require('./core/tray-menu.cjs')
-const { CompanionPluginManager, PLUGIN_ARCHIVE } = require('./core/companion-plugin-manager.cjs')
+const { CompanionPluginManager, PLUGIN_ARCHIVE, commandEnvironment } = require('./core/companion-plugin-manager.cjs')
 const {
   LocalDshManager,
   LocalPortOccupiedError,
   findNextAvailablePort,
   isPortAvailable,
-  resolveDshExecutable,
 } = require('./core/local-dsh-manager.cjs')
+const { publicDshRuntime, resolveDshRuntime } = require('./core/dsh-runtime.cjs')
+const { createSerialExecutor } = require('./core/serial-executor.cjs')
 
 app.enableSandbox()
 const isPrimaryInstance = app.requestSingleInstanceLock()
@@ -26,11 +27,16 @@ let settings
 let closing = false
 let localDsh
 let companionPlugin
+const runLocalDshOperation = createSerialExecutor()
+let activeDshRuntime
 let endpointStore
 let settingsStore
 let sshPairing
 let tunnels
 let endpointStoreWritable = true
+let bundledDshExecutable
+let pluginToolDirectory
+let pnpmScriptPath
 const indexFile = path.join(__dirname, 'renderer', 'index.html')
 const indexUrl = pathToFileURL(indexFile).toString()
 const windowsIcon = path.join(__dirname, '..', 'resources', 'app-icon.ico')
@@ -155,6 +161,57 @@ async function inspectCurrentLocalDsh() {
   return localDsh.inspect(port)
 }
 
+function bindLocalDshState() {
+  localDsh.on('state', (state) => {
+    sendToMainWindow('local-dsh:state', state)
+    updateTrayMenu()
+  })
+}
+
+function configureDshServices(runtime) {
+  localDsh?.removeAllListeners('state')
+  activeDshRuntime = runtime
+  const environment = commandEnvironment(runtime.environmentExecutable, process.env, {
+    toolDirectory: pluginToolDirectory,
+    pnpmScriptPath,
+  })
+  localDsh = new LocalDshManager({
+    cwd: app.getPath('home'),
+    executable: runtime.executable,
+    resolveVersion: runtime.resolveVersion,
+    noOpenSupported: runtime.noOpenSupported,
+    startupTimeout: runtime.startupTimeout,
+    environment,
+  })
+  companionPlugin = new CompanionPluginManager({
+    homeDirectory: app.getPath('home'),
+    dshHome: process.env.DSH_HOME,
+    dshExecutable: runtime.executable,
+    nodeExecutable: process.execPath,
+    packagePath: app.isPackaged
+      ? path.join(process.resourcesPath, 'plugins', PLUGIN_ARCHIVE)
+      : path.join(__dirname, '..', 'resources', 'plugins', PLUGIN_ARCHIVE),
+    toolDirectory: pluginToolDirectory,
+    pnpmScriptPath,
+  })
+  bindLocalDshState()
+}
+
+function inspectInstalledDshRuntime() {
+  try {
+    const runtime = resolveDshRuntime('system', { bundledExecutable: bundledDshExecutable })
+    return Object.freeze({ available: true, version: runtime.version })
+  } catch {
+    return Object.freeze({ available: false, version: null })
+  }
+}
+
+function localDshIsBusy(state = localDsh?.getState()) {
+  return Boolean(localDsh?.hasOwnedProcess())
+    || Boolean(state?.owned)
+    || ['running', 'starting', 'stopping'].includes(state?.state)
+}
+
 function registerIpc(endpointStore, settingsStore) {
   ipcMain.handle('endpoints:list', async (event) => {
     assertSender(event)
@@ -205,21 +262,49 @@ function registerIpc(endpointStore, settingsStore) {
     return settings
   })
 
-  ipcMain.handle('settings:save', (event, input) => {
+  ipcMain.handle('settings:save', async (event, input) => {
     assertSender(event)
-    settings = settingsStore.save(input)
-    mainWindow?.setBackgroundColor(themeBackgrounds[settings.theme])
-    return settings
+    return runLocalDshOperation(async () => {
+      const next = normalizeSettings(input)
+      let nextRuntime = activeDshRuntime
+      if (next.dshRuntime !== settings.dshRuntime) {
+        const state = await inspectCurrentLocalDsh()
+        if (localDshIsBusy(state)) {
+          throw new Error('请先停止本机 DSH，再切换运行方式')
+        }
+        nextRuntime = resolveDshRuntime(next.dshRuntime, { bundledExecutable: bundledDshExecutable })
+      }
+      settings = settingsStore.save(next)
+      if (nextRuntime !== activeDshRuntime) {
+        configureDshServices(nextRuntime)
+        await localDsh.inspect(localEndpoint()?.remotePort ?? 3080)
+      }
+      mainWindow?.setBackgroundColor(themeBackgrounds[settings.theme])
+      return settings
+    })
+  })
+
+  ipcMain.handle('dsh-runtime:status', (event) => {
+    assertSender(event)
+    return {
+      ...publicDshRuntime(activeDshRuntime),
+      installed: inspectInstalledDshRuntime(),
+    }
   })
 
   ipcMain.handle('companion-plugin:status', async (event) => {
     assertSender(event)
-    return companionPlugin.inspect(await inspectCurrentLocalDsh())
+    return runLocalDshOperation(async () => companionPlugin.inspect(await inspectCurrentLocalDsh()))
   })
 
   ipcMain.handle('companion-plugin:install', async (event) => {
     assertSender(event)
-    return companionPlugin.install(await inspectCurrentLocalDsh())
+    return runLocalDshOperation(async () => companionPlugin.install(await inspectCurrentLocalDsh()))
+  })
+
+  ipcMain.handle('companion-plugin:uninstall', async (event) => {
+    assertSender(event)
+    return runLocalDshOperation(async () => companionPlugin.uninstall(await inspectCurrentLocalDsh()))
   })
 
   ipcMain.handle('companion-plugin:show-package', (event) => {
@@ -265,28 +350,30 @@ function registerIpc(endpointStore, settingsStore) {
 
   ipcMain.handle('local-dsh:start', async (event) => {
     assertSender(event)
-    return startLocalDsh()
+    return runLocalDshOperation(startLocalDsh)
   })
 
   ipcMain.handle('local-dsh:save', async (event, input) => {
     assertSender(event)
-    const current = localEndpoint()
-    const normalized = normalizeEndpoint({
-      id: 'local-dsh',
-      mode: 'local',
-      name: input?.name,
-      remotePort: input?.remotePort,
+    return runLocalDshOperation(async () => {
+      const current = localEndpoint()
+      const normalized = normalizeEndpoint({
+        id: 'local-dsh',
+        mode: 'local',
+        name: input?.name,
+        remotePort: input?.remotePort,
+      })
+      const portChanged = current && current.remotePort !== normalized.remotePort
+      if (portChanged && localDshIsBusy()) {
+        throw new Error('请先停止本机 DSH，再修改启动端口')
+      }
+      if (portChanged && !(await isPortAvailable(normalized.remotePort))) {
+        throw new Error(`本地端口 ${normalized.remotePort} 已被占用，请换一个端口`)
+      }
+      saveLocalEndpoint(endpointStore, normalized.remotePort, normalized.name)
+      await localDsh.inspect(normalized.remotePort)
+      return normalized
     })
-    const portChanged = current && current.remotePort !== normalized.remotePort
-    if (portChanged && localDsh.getState().state === 'running') {
-      throw new Error('请先停止本机 DSH，再修改启动端口')
-    }
-    if (portChanged && !(await isPortAvailable(normalized.remotePort))) {
-      throw new Error(`本地端口 ${normalized.remotePort} 已被占用，请换一个端口`)
-    }
-    saveLocalEndpoint(endpointStore, normalized.remotePort, normalized.name)
-    await localDsh.inspect(normalized.remotePort)
-    return normalized
   })
 
   ipcMain.handle('local-dsh:stop', async (event) => {
@@ -296,7 +383,7 @@ function registerIpc(endpointStore, settingsStore) {
 
   ipcMain.handle('local-dsh:open', async (event) => {
     assertSender(event)
-    return openLocalDshEndpoint()
+    return runLocalDshOperation(openLocalDshEndpoint)
   })
 }
 
@@ -326,12 +413,18 @@ function updateTrayMenu() {
     localState: localDsh?.getState(),
     actions: {
       showWindow: showMainWindow,
-      startLocalAndOpen: () => runTrayAction(async () => {
+      startLocalAndOpen: () => runTrayAction(() => runLocalDshOperation(async () => {
         const result = await startLocalDsh()
         if (!result.cancelled) await openLocalDshEndpoint()
-      }, '本机 DSH 启动失败，请在主窗口查看状态。'),
-      openLocal: () => runTrayAction(openLocalDshEndpoint, 'WebUI 无法打开，请在主窗口查看状态。'),
-      stopLocal: () => runTrayAction(() => localDsh.stop(), '本机 DSH 停止失败，请在主窗口查看状态。'),
+      }), '本机 DSH 启动失败，请在主窗口查看状态。'),
+      openLocal: () => runTrayAction(
+        () => runLocalDshOperation(openLocalDshEndpoint),
+        'WebUI 无法打开，请在主窗口查看状态。',
+      ),
+      stopLocal: () => runTrayAction(
+        () => localDsh.stop(),
+        '本机 DSH 停止失败，请在主窗口查看状态。',
+      ),
       connectAndOpen: (id) => runTrayAction(async () => {
         await startTunnel(id)
         await openEndpoint(id)
@@ -417,20 +510,17 @@ app.whenReady().then(async () => {
   tunnels = new TunnelManager({
     identityFile: sshPairing.identityFile,
   })
-  localDsh = new LocalDshManager({ cwd: app.getPath('home') })
-  companionPlugin = new CompanionPluginManager({
-    homeDirectory: app.getPath('home'),
-    dshExecutable: resolveDshExecutable(),
-    packagePath: app.isPackaged
-      ? path.join(process.resourcesPath, 'plugins', PLUGIN_ARCHIVE)
-      : path.join(__dirname, '..', 'resources', 'plugins', PLUGIN_ARCHIVE),
-    toolDirectory: app.isPackaged
-      ? path.join(process.resourcesPath, 'plugin-tools')
-      : path.join(__dirname, '..', 'resources', 'plugin-tools'),
-    pnpmScriptPath: app.isPackaged
-      ? path.join(process.resourcesPath, 'pnpm', 'bin', 'pnpm.cjs')
-      : path.join(__dirname, '..', 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
-  })
+  bundledDshExecutable = path.join(
+    app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', 'resources'),
+    'dsh-runner',
+    process.platform === 'win32' ? 'dsh.cmd' : 'dsh',
+  )
+  pluginToolDirectory = app.isPackaged
+    ? path.join(process.resourcesPath, 'plugin-tools')
+    : path.join(__dirname, '..', 'resources', 'plugin-tools')
+  pnpmScriptPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'pnpm', 'bin', 'pnpm.cjs')
+    : path.join(__dirname, '..', 'node_modules', 'pnpm', 'bin', 'pnpm.cjs')
   const defaultLocal = normalizeEndpoint({
     id: 'local-dsh',
     mode: 'local',
@@ -448,16 +538,21 @@ app.whenReady().then(async () => {
   try {
     settings = settingsStore.load()
   } catch {
-    dialog.showErrorBox('DSH Tunnel', '无法读取界面设置，已恢复默认主题。')
-    settings = { theme: DEFAULT_THEME }
+    dialog.showErrorBox('DSH Tunnel', '无法读取界面设置，已恢复默认设置。')
+    settings = normalizeSettings({})
   }
+  let runtime
+  try {
+    runtime = resolveDshRuntime(settings.dshRuntime, { bundledExecutable: bundledDshExecutable })
+  } catch {
+    settings = settingsStore.save({ ...settings, dshRuntime: DEFAULT_DSH_RUNTIME })
+    runtime = resolveDshRuntime(DEFAULT_DSH_RUNTIME, { bundledExecutable: bundledDshExecutable })
+    dialog.showErrorBox('DSH Tunnel', '本机已安装的 DSH 当前不可用，已改用 npx 按需运行。')
+  }
+  configureDshServices(runtime)
   registerIpc(endpointStore, settingsStore)
   tunnels.on('state', (state) => {
     sendToMainWindow('tunnels:state', state)
-    updateTrayMenu()
-  })
-  localDsh.on('state', (state) => {
-    sendToMainWindow('local-dsh:state', state)
     updateTrayMenu()
   })
   await localDsh.inspect(localEndpoint()?.remotePort ?? 3080)

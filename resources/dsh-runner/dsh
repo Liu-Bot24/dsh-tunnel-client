@@ -1,0 +1,16 @@
+#!/bin/sh
+
+set -eu
+
+if command -v npx >/dev/null 2>&1; then
+  NPX_BIN="$(command -v npx)"
+elif [ -x /opt/homebrew/bin/npx ]; then
+  NPX_BIN=/opt/homebrew/bin/npx
+elif [ -x /usr/local/bin/npx ]; then
+  NPX_BIN=/usr/local/bin/npx
+else
+  echo "未找到 npx，请先安装 Node.js。" >&2
+  exit 127
+fi
+
+exec "$NPX_BIN" --yes --package=@deepseek-ai/dsh@latest -- dsh "$@"

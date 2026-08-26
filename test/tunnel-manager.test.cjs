@@ -62,6 +62,31 @@ test('kills the SSH process when readiness fails', async () => {
   assert.equal(manager.get('one').state, 'error')
 })
 
+test('force-terminates SSH when readiness cleanup ignores the graceful signal', async () => {
+  const child = fakeChild()
+  const signals = []
+  child.kill = (signal) => {
+    signals.push(signal ?? 'SIGTERM')
+    return true
+  }
+  const manager = new TunnelManager({
+    spawnImpl: () => child,
+    waitForReady: async () => { throw new Error('DSH 没有响应') },
+    assertPortAvailable: async () => {},
+    forceTerminateProcess: async () => {
+      signals.push('forced')
+      queueMicrotask(() => child.emit('exit', 1, 'SIGKILL'))
+    },
+    stopTimeoutMs: 5,
+    pollIntervalMs: 1,
+  })
+
+  await assert.rejects(() => manager.start(endpoint), /DSH 没有响应/)
+  assert.deepEqual(signals, ['SIGTERM', 'forced'])
+  assert.equal(manager.get(endpoint.id).active, false)
+  assert.equal(manager.get(endpoint.id).state, 'error')
+})
+
 test('reports a spawn error immediately when OpenSSH cannot start', async () => {
   const child = fakeChild()
   child.pid = undefined
@@ -196,6 +221,7 @@ test('reports stop failure and keeps the live tunnel available for retry', async
     spawnImpl: () => child,
     waitForReady: async () => {},
     assertPortAvailable: async () => {},
+    forceTerminateProcess: async () => {},
     stopTimeoutMs: 5,
     pollIntervalMs: 1,
   })

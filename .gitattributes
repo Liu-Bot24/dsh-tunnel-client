@@ -1,0 +1,2 @@
+resources/dsh-runner/*.cmd text eol=crlf
+resources/plugin-tools/*.cmd text eol=crlf

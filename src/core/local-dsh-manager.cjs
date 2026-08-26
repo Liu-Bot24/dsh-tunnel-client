@@ -2,6 +2,7 @@ const { EventEmitter } = require('node:events')
 const fs = require('node:fs')
 const http = require('node:http')
 const net = require('node:net')
+const path = require('node:path')
 const childProcess = require('node:child_process')
 const crossSpawn = process.platform === 'win32' ? require('cross-spawn') : null
 const spawn = crossSpawn ?? childProcess.spawn
@@ -31,23 +32,26 @@ class LocalDshManager extends EventEmitter {
     probe = probeLocalService,
     executable = resolveDshExecutable(),
     cwd = process.cwd(),
+    environment = process.env,
     startupTimeout = 20_000,
     shutdownTimeout = 5_000,
     pollInterval = 250,
     terminateProcess = terminateChildProcess,
     resolveVersion = resolveDshVersion,
+    noOpenSupported = null,
   } = {}) {
     super()
     this.spawnProcess = spawnProcess
     this.probe = probe
     this.executable = executable
     this.cwd = cwd
+    this.environment = environment
     this.startupTimeout = startupTimeout
     this.shutdownTimeout = shutdownTimeout
     this.pollInterval = pollInterval
     this.terminateProcess = terminateProcess
     this.resolveVersion = resolveVersion
-    this.noOpenSupported = null
+    this.noOpenSupported = typeof noOpenSupported === 'boolean' ? noOpenSupported : null
     this.child = null
     this.startPromise = null
     this.startPort = null
@@ -121,9 +125,9 @@ class LocalDshManager extends EventEmitter {
       if (this.#supportsNoOpen()) args.push('--no-open')
       child = this.spawnProcess(this.executable, args, {
         cwd: this.cwd,
-        env: process.env,
+        env: this.environment,
         shell: false,
-        stdio: ['ignore', 'ignore', 'ignore'],
+        stdio: ['ignore', 'ignore', 'pipe'],
         windowsHide: true,
       })
     } catch (error) {
@@ -144,7 +148,7 @@ class LocalDshManager extends EventEmitter {
         info.exitPromise,
       ])
       if (outcome.type === 'error') throw translateSpawnError(outcome.error)
-      if (outcome.type === 'exit') throw new Error('DSH 启动失败')
+      if (outcome.type === 'exit') throw translateStartupFailure(outcome.stderr)
       if (info.exited) throw new Error('DSH 启动失败')
       if (this.startCancelled) throw new Error('DSH 启动已取消')
       return this.setState({ state: 'running', port, owned: true, error: null })
@@ -189,7 +193,11 @@ class LocalDshManager extends EventEmitter {
       exited: false,
       intentional: false,
       exitPromise: null,
+      stderr: '',
     }
+    child.stderr?.on('data', (chunk) => {
+      info.stderr = `${info.stderr}${String(chunk)}`.slice(-8192)
+    })
     info.exitPromise = new Promise((resolve) => {
       child.once('error', (error) => {
         if (child.pid == null) {
@@ -204,7 +212,7 @@ class LocalDshManager extends EventEmitter {
         if (!info.intentional) {
           this.setState({ state: 'error', port, owned: false, error: 'DSH 已停止' })
         }
-        resolve({ type: 'exit', code, signal })
+        resolve({ type: 'exit', code, signal, stderr: info.stderr })
       })
     })
     return info
@@ -262,11 +270,44 @@ function translateSpawnError(error) {
   return error?.code === 'ENOENT' ? new DshNotInstalledError() : error
 }
 
-function resolveDshVersion(executable, { spawnSyncProcess = spawnSync } = {}) {
+function translateStartupFailure(stderr) {
+  const diagnostic = String(stderr ?? '')
+  if (/未找到 npx|npx(?:\.cmd)?[^\n]*(?:not found|not recognized)|not recognized[^\n]*npx/i.test(diagnostic)) {
+    return new Error('未找到 npx，请先安装 Node.js')
+  }
+  if (/ENOTFOUND|EAI_AGAIN|getaddrinfo|network request[^\n]*failed|network[^\n]*unavailable/i.test(diagnostic)) {
+    return new Error('DSH 下载失败，请检查网络连接')
+  }
+  if (/ETIMEDOUT|fetch[^\n]*timeout|network[^\n]*timeout/i.test(diagnostic)) {
+    return new Error('DSH 下载超时，请检查网络连接')
+  }
+  return new Error('DSH 启动失败')
+}
+
+function resolveDshVersion(executable, {
+  spawnSyncProcess = spawnSync,
+  environment = process.env,
+  timeout = 5_000,
+} = {}) {
+  const executableDirectory = path.isAbsolute(executable) ? path.dirname(executable) : null
+  let nextEnvironment = environment
+  if (executableDirectory) {
+    const currentPath = environment.PATH ?? environment.Path ?? environment.path ?? ''
+    const pathEntries = currentPath.split(path.delimiter).filter(Boolean)
+    nextEnvironment = Object.fromEntries(
+      Object.entries(environment).filter(([key]) => key.toLowerCase() !== 'path'),
+    )
+    nextEnvironment.PATH = [
+      executableDirectory,
+      ...pathEntries.filter((entry) => entry !== executableDirectory),
+    ].join(path.delimiter)
+  }
   const result = spawnSyncProcess(executable, ['--version'], {
     shell: false,
     windowsHide: true,
     encoding: 'utf8',
+    env: nextEnvironment,
+    timeout,
   })
   if (result?.error || result?.status !== 0) return null
   const output = String(result?.stdout ?? '').trim()
@@ -314,11 +355,19 @@ function terminateChildProcess(child, {
   })
 }
 
-function resolveDshExecutable(platform = process.platform, existsSync = fs.existsSync) {
+function resolveDshExecutable(
+  platform = process.platform,
+  existsSync = fs.existsSync,
+  environment = process.env,
+) {
+  const pathApi = platform === 'win32' ? path.win32 : path.posix
   const candidates = platform === 'darwin'
     ? ['/opt/homebrew/bin/dsh', '/usr/local/bin/dsh']
     : platform === 'win32'
-      ? []
+      ? [
+          environment.APPDATA && pathApi.join(environment.APPDATA, 'npm', 'dsh.cmd'),
+          environment.APPDATA && pathApi.join(environment.APPDATA, 'npm', 'dsh.exe'),
+        ].filter(Boolean)
       : ['/usr/local/bin/dsh', '/usr/bin/dsh']
   return candidates.find((candidate) => existsSync(candidate)) ?? 'dsh'
 }
