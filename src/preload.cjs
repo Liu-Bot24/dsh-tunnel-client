@@ -6,7 +6,6 @@ contextBridge.exposeInMainWorld('dshTunnel', Object.freeze({
   deleteEndpoint: (id) => ipcRenderer.invoke('endpoints:delete', id),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
-  getDshRuntimeStatus: () => ipcRenderer.invoke('dsh-runtime:status'),
   inspectCompanionPlugin: () => ipcRenderer.invoke('companion-plugin:status'),
   installCompanionPlugin: () => ipcRenderer.invoke('companion-plugin:install'),
   uninstallCompanionPlugin: () => ipcRenderer.invoke('companion-plugin:uninstall'),

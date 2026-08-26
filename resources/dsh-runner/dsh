@@ -13,4 +13,14 @@ else
   exit 127
 fi
 
-exec "$NPX_BIN" --yes --package=@deepseek-ai/dsh@latest -- dsh "$@"
+case "$NPX_BIN" in
+  */*) NPX_DIR="${NPX_BIN%/*}" ;;
+  *) NPX_DIR=. ;;
+esac
+if [ -x "$NPX_DIR/node" ]; then
+  exec "$NPX_DIR/node" "$NPX_BIN" --yes @deepseek-ai/dsh "$@"
+fi
+
+PATH="$NPX_DIR${PATH:+:$PATH}"
+export PATH
+exec "$NPX_BIN" --yes @deepseek-ai/dsh "$@"

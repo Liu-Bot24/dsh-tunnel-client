@@ -26,8 +26,6 @@ const pairingDialog = document.querySelector('#pairing-dialog')
 const pairingForm = document.querySelector('#pairing-form')
 const settingsDialog = document.querySelector('#settings-dialog')
 const settingsForm = document.querySelector('#settings-form')
-const runtimeStatusElement = document.querySelector('#runtime-status')
-const installedDshDetailElement = document.querySelector('#installed-dsh-detail')
 const pluginFields = {
   version: document.querySelector('#plugin-version'),
   status: document.querySelector('#plugin-status'),
@@ -82,11 +80,10 @@ const pairingFields = {
 
 let endpoints = []
 let selectedEndpointId = null
-let settings = { theme: 'whale-song', dshRuntime: 'official-npx' }
+let settings = { theme: 'whale-song' }
 let settingsCommitted = false
 let companionPluginState = null
 let companionPluginBusy = false
-let dshRuntimeStatus = null
 let noticeTimer = null
 let pendingPairing = null
 let localDshState = { state: 'stopped', port: 3080, owned: false, error: null }
@@ -427,63 +424,14 @@ async function refreshCompanionPlugin() {
   }
 }
 
-async function refreshDshRuntimeStatus() {
-  runtimeStatusElement.dataset.kind = ''
-  try {
-    dshRuntimeStatus = await window.dshTunnel.getDshRuntimeStatus()
-    renderDshRuntimeStatus()
-  } catch (error) {
-    dshRuntimeStatus = null
-    setRuntimeOptionDisabled('official-npx', true)
-    setRuntimeOptionDisabled('system', true)
-    runtimeStatusElement.textContent = userMessage(error, '无法读取 DSH 运行方式')
-    runtimeStatusElement.dataset.kind = 'error'
-  }
-}
-
-function localDshIsBusy() {
-  return Boolean(localDshState?.owned)
-    || ['running', 'starting', 'stopping'].includes(localDshState?.state)
-}
-
-function setRuntimeOptionDisabled(value, disabled) {
-  const input = settingsForm.querySelector(`input[name="dsh-runtime"][value="${value}"]`)
-  input.disabled = disabled
-  input.closest('.runtime-option')?.classList.toggle('is-disabled', disabled)
-}
-
-function renderDshRuntimeStatus() {
-  if (!dshRuntimeStatus) return
-  const installedAvailable = Boolean(dshRuntimeStatus.installed?.available)
-  const busy = localDshIsBusy()
-  setRuntimeOptionDisabled('official-npx', busy)
-  setRuntimeOptionDisabled('system', busy || !installedAvailable)
-  installedDshDetailElement.textContent = installedAvailable
-    ? `已检测到 v${dshRuntimeStatus.installed.version}，使用现有 dsh 命令。`
-    : '未检测到本机 dsh 命令。'
-  const current = dshRuntimeStatus.mode === 'system'
-    ? `当前使用：本机已安装的 DSH v${dshRuntimeStatus.version}`
-    : '当前使用：npx 按需运行（自动跟随 latest）'
-  runtimeStatusElement.textContent = busy
-    ? `${current}；停止本机 DSH 后可切换运行方式。`
-    : current
-}
-
 function openSettings() {
   settingsCommitted = false
   const selected = settingsForm.querySelector(`input[name="theme"][value="${settings.theme}"]`)
   if (selected) selected.checked = true
-  const runtime = settingsForm.querySelector(`input[name="dsh-runtime"][value="${settings.dshRuntime}"]`)
-  if (runtime) runtime.checked = true
-  dshRuntimeStatus = null
-  setRuntimeOptionDisabled('official-npx', true)
-  setRuntimeOptionDisabled('system', true)
-  installedDshDetailElement.textContent = '正在检测本机 DSH…'
   applyTheme(settings.theme)
   companionPluginState = null
   renderCompanionPlugin()
   settingsDialog.showModal()
-  refreshDshRuntimeStatus()
   refreshCompanionPlugin()
 }
 
@@ -669,10 +617,9 @@ settingsForm.addEventListener('change', (event) => {
 settingsForm.addEventListener('submit', async (event) => {
   event.preventDefault()
   const selected = settingsForm.querySelector('input[name="theme"]:checked')
-  const runtime = settingsForm.querySelector('input[name="dsh-runtime"]:checked')
-  if (!selected || !runtime) return
+  if (!selected) return
   try {
-    settings = await window.dshTunnel.saveSettings({ theme: selected.value, dshRuntime: runtime.value })
+    settings = await window.dshTunnel.saveSettings({ theme: selected.value })
     settingsCommitted = true
     applyTheme(settings.theme)
     settingsDialog.close()
@@ -696,7 +643,6 @@ window.dshTunnel.onLocalDshState((state) => {
   localDshState = state
   render()
   if (settingsDialog.open) {
-    renderDshRuntimeStatus()
     if (!companionPluginBusy) refreshCompanionPlugin()
   }
 })

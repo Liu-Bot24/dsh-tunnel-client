@@ -1,7 +1,7 @@
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell, Tray } = require('electron')
-const { DEFAULT_DSH_RUNTIME, DEFAULT_THEME, EndpointStore, SettingsStore, normalizeSettings } = require('./core/store.cjs')
+const { DEFAULT_THEME, EndpointStore, SettingsStore, normalizeSettings } = require('./core/store.cjs')
 const { normalizeEndpoint, loopbackUrl } = require('./core/endpoint.cjs')
 const { SshPairingService } = require('./core/ssh-pairing.cjs')
 const { TunnelManager, endpointFingerprint } = require('./core/tunnel-manager.cjs')
@@ -13,7 +13,7 @@ const {
   findNextAvailablePort,
   isPortAvailable,
 } = require('./core/local-dsh-manager.cjs')
-const { publicDshRuntime, resolveDshRuntime } = require('./core/dsh-runtime.cjs')
+const { resolveDshRuntime } = require('./core/dsh-runtime.cjs')
 const { createSerialExecutor } = require('./core/serial-executor.cjs')
 
 app.enableSandbox()
@@ -28,7 +28,6 @@ let closing = false
 let localDsh
 let companionPlugin
 const runLocalDshOperation = createSerialExecutor()
-let activeDshRuntime
 let endpointStore
 let settingsStore
 let sshPairing
@@ -170,7 +169,6 @@ function bindLocalDshState() {
 
 function configureDshServices(runtime) {
   localDsh?.removeAllListeners('state')
-  activeDshRuntime = runtime
   const environment = commandEnvironment(runtime.environmentExecutable, process.env, {
     toolDirectory: pluginToolDirectory,
     pnpmScriptPath,
@@ -195,15 +193,6 @@ function configureDshServices(runtime) {
     pnpmScriptPath,
   })
   bindLocalDshState()
-}
-
-function inspectInstalledDshRuntime() {
-  try {
-    const runtime = resolveDshRuntime('system', { bundledExecutable: bundledDshExecutable })
-    return Object.freeze({ available: true, version: runtime.version })
-  } catch {
-    return Object.freeze({ available: false, version: null })
-  }
 }
 
 function localDshIsBusy(state = localDsh?.getState()) {
@@ -262,34 +251,11 @@ function registerIpc(endpointStore, settingsStore) {
     return settings
   })
 
-  ipcMain.handle('settings:save', async (event, input) => {
+  ipcMain.handle('settings:save', (event, input) => {
     assertSender(event)
-    return runLocalDshOperation(async () => {
-      const next = normalizeSettings(input)
-      let nextRuntime = activeDshRuntime
-      if (next.dshRuntime !== settings.dshRuntime) {
-        const state = await inspectCurrentLocalDsh()
-        if (localDshIsBusy(state)) {
-          throw new Error('请先停止本机 DSH，再切换运行方式')
-        }
-        nextRuntime = resolveDshRuntime(next.dshRuntime, { bundledExecutable: bundledDshExecutable })
-      }
-      settings = settingsStore.save(next)
-      if (nextRuntime !== activeDshRuntime) {
-        configureDshServices(nextRuntime)
-        await localDsh.inspect(localEndpoint()?.remotePort ?? 3080)
-      }
-      mainWindow?.setBackgroundColor(themeBackgrounds[settings.theme])
-      return settings
-    })
-  })
-
-  ipcMain.handle('dsh-runtime:status', (event) => {
-    assertSender(event)
-    return {
-      ...publicDshRuntime(activeDshRuntime),
-      installed: inspectInstalledDshRuntime(),
-    }
+    settings = settingsStore.save(normalizeSettings(input))
+    mainWindow?.setBackgroundColor(themeBackgrounds[settings.theme])
+    return settings
   })
 
   ipcMain.handle('companion-plugin:status', async (event) => {
@@ -541,14 +507,7 @@ app.whenReady().then(async () => {
     dialog.showErrorBox('DSH Tunnel', '无法读取界面设置，已恢复默认设置。')
     settings = normalizeSettings({})
   }
-  let runtime
-  try {
-    runtime = resolveDshRuntime(settings.dshRuntime, { bundledExecutable: bundledDshExecutable })
-  } catch {
-    settings = settingsStore.save({ ...settings, dshRuntime: DEFAULT_DSH_RUNTIME })
-    runtime = resolveDshRuntime(DEFAULT_DSH_RUNTIME, { bundledExecutable: bundledDshExecutable })
-    dialog.showErrorBox('DSH Tunnel', '本机已安装的 DSH 当前不可用，已改用 npx 按需运行。')
-  }
+  const runtime = resolveDshRuntime({ bundledExecutable: bundledDshExecutable })
   configureDshServices(runtime)
   registerIpc(endpointStore, settingsStore)
   tunnels.on('state', (state) => {

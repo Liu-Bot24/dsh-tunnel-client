@@ -126,8 +126,8 @@ test('uses and persists a supported interface theme', (t) => {
   const filename = path.join(directory, 'settings.json')
   const store = new SettingsStore(filename)
 
-  assert.deepEqual(store.load(), { theme: DEFAULT_THEME, dshRuntime: 'official-npx' })
-  const saved = store.save({ theme: SUPPORTED_THEMES[2], dshRuntime: 'system' })
+  assert.deepEqual(store.load(), { theme: DEFAULT_THEME })
+  const saved = store.save({ theme: SUPPORTED_THEMES[2] })
   assert.deepEqual(store.load(), saved)
   assertPrivatePosixMode(filename)
   assert.deepEqual(fs.readdirSync(directory), ['settings.json'])
@@ -140,9 +140,11 @@ test('rejects unknown interface themes', (t) => {
   assert.throws(() => store.save({ theme: 'made-up-theme' }), /主题不可用/)
 })
 
-test('rejects unknown DSH runtimes', (t) => {
+test('ignores the retired DSH runtime setting when loading an older file', (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-tunnel-settings-'))
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
-  const store = new SettingsStore(path.join(directory, 'settings.json'))
-  assert.throws(() => store.save({ theme: DEFAULT_THEME, dshRuntime: 'made-up-runtime' }), /运行方式不可用/)
+  const filename = path.join(directory, 'settings.json')
+  fs.writeFileSync(filename, JSON.stringify({ theme: SUPPORTED_THEMES[1], dshRuntime: 'system' }))
+  const store = new SettingsStore(filename)
+  assert.deepEqual(store.load(), { theme: SUPPORTED_THEMES[1] })
 })
