@@ -126,6 +126,7 @@ test('starts DSH rc.8 and newer with no-open and no shell', async () => {
   assert.equal(calls[0].command, '/example/dsh')
   assert.deepEqual(calls[0].args, ['web', '--port', '3080', '--no-open'])
   assert.equal(calls[0].options.shell, false)
+  assert.equal(calls[0].options.detached, process.platform !== 'win32')
   assert.equal(calls[0].options.cwd, '/example/home')
   assert.equal(calls[0].options.env.DSH_TUNNEL_PNPM_PATH, '/example/pnpm.cjs')
 
@@ -335,6 +336,67 @@ test('terminates the owned Windows wrapper process tree without a shell', async 
   assert.deepEqual(calls[0].args, ['/pid', '1234', '/t', '/f'])
   assert.equal(calls[0].options.shell, false)
   assert.equal(calls[0].options.windowsHide, true)
+})
+
+test('escalates only the owned POSIX process group after its grace period', async () => {
+  const signals = []
+  let alive = true
+  await terminateChildProcess({ pid: 1234 }, {
+    platform: 'darwin', processGroup: true, gracefulTimeout: 2, pollInterval: 1,
+    signalProcess: (pid, signal) => {
+      assert.equal(pid, -1234)
+      signals.push(signal)
+      if (!alive) throw Object.assign(new Error('gone'), { code: 'ESRCH' })
+      if (signal === 'SIGKILL') alive = false
+    },
+  })
+  assert.equal(signals[0], 'SIGTERM')
+  assert.ok(signals.includes('SIGKILL'))
+})
+
+test('does not force a POSIX group that already exited gracefully', async () => {
+  const signals = []
+  await terminateChildProcess({ pid: 1234 }, {
+    platform: 'darwin', processGroup: true,
+    signalProcess: (_pid, signal) => {
+      signals.push(signal)
+      if (signal === 0) throw Object.assign(new Error('gone'), { code: 'ESRCH' })
+    },
+  })
+  assert.deepEqual(signals, ['SIGTERM', 0])
+})
+
+test('does not treat denied process-group termination as successful', async () => {
+  await assert.rejects(() => terminateChildProcess({ pid: 1234 }, {
+    platform: 'darwin', processGroup: true,
+    signalProcess: () => { throw Object.assign(new Error('denied'), { code: 'EPERM' }) },
+  }), { code: 'EPERM' })
+})
+
+test('retains group ownership when the wrapper exited but tree cleanup failed', async () => {
+  const child = fakeChild()
+  child.pid = 1234
+  let probes = 0
+  let attempts = 0
+  const manager = new LocalDshManager({
+    platform: 'darwin', noOpenSupported: true,
+    probe: async () => attempts > 1 ? 'free' : probes++ === 0 ? 'free' : 'dsh',
+    spawnProcess: () => child,
+    terminateProcess: async () => {
+      attempts += 1
+      if (attempts === 1) {
+        child.emit('exit', 0, null)
+        throw new Error('descendant still alive')
+      }
+    },
+  })
+  await manager.start(3080)
+  await assert.rejects(manager.stop(), /descendant still alive/)
+  assert.equal(manager.hasOwnedProcess(), true)
+  assert.equal(manager.getState().owned, true)
+  await assert.rejects(manager.start(3080), /请先停止/)
+  assert.equal((await manager.stop()).state, 'stopped')
+  assert.equal(manager.hasOwnedProcess(), false)
 })
 
 test('does not report stopped while the DSH port still responds', async () => {

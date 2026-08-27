@@ -1,10 +1,10 @@
 # DSH Tunnel Artifact Preview Companion Plugin
 
-Safely preview HTML, HTM, and SVG files produced by a remote DSH session in the browser on the controlling device.
+Safely preview HTML, HTM, SVG, PNG, JPG, JPEG, WebP, GIF, and AVIF files produced by a remote DSH session in the browser on the controlling device.
 
 This is a companion component maintained inside the DSH Tunnel repository under `plugins/artifact-preview`; it is not a standalone product.
 
-The plugin reuses DSH's existing Produced row and adds no button or panel. Preview interception is enabled only on remote pages marked by DSH Tunnel. Direct local DSH use keeps the stock UI and open behavior.
+The plugin reuses DSH's existing Produced row and artifact mentions in the closing response, adding no button or panel. Preview interception is enabled only on remote pages marked by DSH Tunnel. Direct local DSH use keeps the stock UI and open behavior.
 
 [简体中文](README.md)
 
@@ -13,7 +13,7 @@ The plugin reuses DSH's existing Produced row and adds no button or panel. Previ
 Prefer the install action under **DSH Tunnel → Settings → Remote Artifact Preview Plugin**. To install it on another device, download the plugin package from the DSH Tunnel Release and run this command on the device that hosts the target DSH instance:
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.4.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.5.tgz
 ```
 
 Restart DSH after installation. To uninstall:
@@ -25,10 +25,11 @@ dsh plugin --profile web remove dsh-plugin-artifact-preview
 ## Scope
 
 - Supports self-contained HTML, HTM, and SVG files up to 5 MiB.
-- Reads only regular UTF-8 files inside the session creation directory.
+- Supports PNG, JPG, JPEG, WebP, GIF, and AVIF images up to 20 MiB with file-signature verification.
+- Reads only regular files inside the session creation directory.
 - Blocks external network access, forms, popups, top-level navigation, downloads, and object loading inside previews.
-- Images, text, and other non-preview files keep DSH's stock open behavior.
-- Inline file links keep DSH's stock behavior; only the bottom Produced row is intercepted.
+- Unsupported files keep DSH's stock open behavior.
+- Only artifact mentions already recognized by DSH are intercepted; ordinary URLs, arbitrary text, and other file links keep their stock behavior.
 
 ## Development
 

@@ -28,6 +28,7 @@ function fakeChild(exitCode = 0, stderr = '', stdout = '') {
 test('installs the bundled plugin offline with the app runtime and verifies the result', async () => {
   let installed = false
   let bundles = []
+  let dependencies = {}
   let invocation = null
   const manager = new CompanionPluginManager({
     homeDirectory: '/home/example',
@@ -38,11 +39,13 @@ test('installs the bundled plugin offline with the app runtime and verifies the 
     platform: 'linux',
     access: async () => {},
     writeFile: async (_filename, contents) => {
-      bundles = JSON.parse(contents).dsh.profile.bundles
+      const manifest = JSON.parse(contents)
+      bundles = manifest.dsh.profile.bundles
+      dependencies = manifest.dependencies ?? dependencies
     },
     readFile: async (filename) => {
       if (filename.endsWith('/profiles/web/package.json')) {
-        return JSON.stringify({ dsh: { profile: { bundles } } })
+        return JSON.stringify({ dsh: { profile: { bundles } }, dependencies })
       }
       if (!installed) {
         const error = new Error('missing')
@@ -68,6 +71,45 @@ test('installs the bundled plugin offline with the app runtime and verifies the 
   assert.equal(invocation.options.shell, false)
   assert.equal(invocation.options.env.ELECTRON_RUN_AS_NODE, '1')
   assert.equal(invocation.options.env.npm_node_execpath, '/app/DSH Tunnel')
+  assert.equal(dependencies[PLUGIN_NAME], `file:/app/plugins/${PLUGIN_ARCHIVE}`)
+})
+
+test('rewrites a stale bundled archive reference before invoking pnpm', async () => {
+  let manifest = {
+    dsh: { profile: { bundles: [PLUGIN_NAME] } },
+    dependencies: {
+      [PLUGIN_NAME]: 'file:/old-app/plugins/dsh-plugin-artifact-preview-0.1.4.tgz',
+      'another-plugin': '1.0.0',
+    },
+  }
+  let installedVersion = '0.1.4'
+  let manifestAtSpawn = null
+  const packagePath = `/new-app/plugins/${PLUGIN_ARCHIVE}`
+  const manager = new CompanionPluginManager({
+    homeDirectory: '/home/example',
+    packagePath,
+    nodeExecutable: '/new-app/DSH Tunnel',
+    pnpmScriptPath: '/new-app/pnpm/bin/pnpm.cjs',
+    platform: 'linux',
+    access: async () => {},
+    readFile: async (filename) => {
+      if (filename.endsWith('/profiles/web/package.json')) return JSON.stringify(manifest)
+      return JSON.stringify({ name: PLUGIN_NAME, version: installedVersion })
+    },
+    writeFile: async (_filename, contents) => {
+      manifest = JSON.parse(contents)
+    },
+    spawnProcess: () => {
+      manifestAtSpawn = structuredClone(manifest)
+      installedVersion = PLUGIN_VERSION
+      return fakeChild()
+    },
+  })
+
+  const result = await manager.install({ state: 'stopped' })
+  assert.equal(result.state, 'installed')
+  assert.equal(manifestAtSpawn.dependencies[PLUGIN_NAME], `file:${packagePath}`)
+  assert.equal(manifestAtSpawn.dependencies['another-plugin'], '1.0.0')
 })
 
 test('uses the bundled pnpm script through the app runtime on Windows', async () => {
@@ -360,6 +402,7 @@ test('uninstall cleans a stale bundle entry even when plugin files are already m
     platform: 'linux',
     packagePath: `/app/plugins/${PLUGIN_ARCHIVE}`,
     access: async () => {},
+    writeFile: async () => {},
     readFile: async (filename) => {
       if (filename.endsWith('/profiles/web/package.json')) {
         return JSON.stringify({ dsh: { profile: { bundles } } })
@@ -390,6 +433,7 @@ test('still rejects a failed command when the plugin is absent', async () => {
     platform: 'linux',
     packagePath: `/app/plugins/${PLUGIN_ARCHIVE}`,
     access: async () => {},
+    writeFile: async () => {},
     readFile: async (filename) => {
       if (filename.endsWith('/profiles/web/package.json')) {
         return JSON.stringify({ dsh: { profile: { bundles: [] } } })

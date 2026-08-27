@@ -2,7 +2,14 @@ import { resolveSessionRoot } from './session-root.mjs'
 import { readPreviewArtifact } from './safe-reader.mjs'
 
 function failure(code, message) {
-  return { ok: false, error: { code, message, details: {} } }
+  if (code === 'internal' || code === 'cancelled') {
+    return { ok: false, error: { code, message, details: {} } }
+  }
+  // Connection validates a closed RPC error union; plugin-specific reasons belong in issue details.
+  return { ok: false, error: {
+    code: 'bad-request', message,
+    details: { issues: [{ code: 'custom', path: [], message, params: { artifactPreviewCode: code } }] },
+  } }
 }
 
 function isPlainRecord(value) {
@@ -39,6 +46,7 @@ const SAFE_ERRORS = new Set([
   'file-too-large',
   'file-changed',
   'invalid-utf8',
+  'invalid-image',
 ])
 
 export function createArtifactPreviewRpcHandler({ sessions, sessionPersistence }) {

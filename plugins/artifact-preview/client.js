@@ -8,7 +8,17 @@ window.__ModuleLoader__.load({
     ((module, exports) => {
       'use strict'
 
-      const PREVIEW_EXTENSIONS = new Set(['.html', '.htm', '.svg'])
+      const PREVIEW_EXTENSIONS = new Set([
+        '.html',
+        '.htm',
+        '.svg',
+        '.png',
+        '.jpg',
+        '.jpeg',
+        '.webp',
+        '.gif',
+        '.avif',
+      ])
 
       function reject(reason) {
         return Object.freeze({ disposition: 'reject', reason })
@@ -54,7 +64,6 @@ window.__ModuleLoader__.load({
     const MARKER = 'dsh_tunnel_preview'
     const MARKER_VALUE = 'web'
     const PREVIEW_REQUEST = 'dsh_artifact_preview'
-    const WRAPPER_CSP = "default-src 'none'; base-uri 'none'; connect-src 'self'; style-src 'unsafe-inline'; frame-src 'self'; form-action 'none'"
     const ARTIFACT_CSP = "default-src 'none'; base-uri 'none'; connect-src 'none'; img-src data: blob:; media-src data: blob:; font-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'none'; frame-src 'none'; child-src 'none'; object-src 'none'; worker-src 'none'"
 
     function isTunnelPreviewPage() {
@@ -110,9 +119,11 @@ window.__ModuleLoader__.load({
     function previewFailure(code) {
       switch (code) {
         case 'file-too-large':
-          return translated('文件超过 5 MiB，无法预览。', 'Files larger than 5 MiB cannot be previewed.')
+          return translated('文件过大，无法预览。', 'The file is too large to preview.')
         case 'invalid-utf8':
           return translated('文件不是有效的 UTF-8 文本。', 'The file is not valid UTF-8 text.')
+        case 'invalid-image':
+          return translated('图片内容与文件类型不匹配。', 'The image content does not match its file type.')
         case 'session-not-found':
         case 'session-root-unavailable':
           return translated('找不到这个会话的文件目录。', 'The session file directory is unavailable.')
@@ -131,9 +142,6 @@ window.__ModuleLoader__.load({
 
     function clearDocument(targetWindow, title) {
       const doc = targetWindow.document
-      const meta = doc.createElement('meta')
-      meta.httpEquiv = 'Content-Security-Policy'
-      meta.content = WRAPPER_CSP
       const charset = doc.createElement('meta')
       charset.charset = 'utf-8'
       const titleNode = doc.createElement('title')
@@ -146,8 +154,9 @@ window.__ModuleLoader__.load({
         main { min-height: 100%; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
         .message { max-width: 560px; line-height: 1.6; text-align: center; }
         iframe { width: 100%; height: 100%; border: 0; background: white; }
+        .image-preview { display: block; width: 100%; height: 100%; object-fit: contain; }
       `
-      doc.head.replaceChildren(meta, charset, titleNode, style)
+      doc.head.replaceChildren(charset, titleNode, style)
       doc.body.replaceChildren()
       doc.documentElement.lang = /^zh(?:-|$)/iu.test(navigator.language || '') ? 'zh-CN' : 'en'
       return doc
@@ -170,6 +179,14 @@ window.__ModuleLoader__.load({
 
     function showArtifact(targetWindow, artifact) {
       const doc = clearDocument(targetWindow, artifact.name)
+      if (artifact.encoding === 'base64' && /^image\/(?:png|jpeg|webp|gif|avif)$/u.test(artifact.mediaType)) {
+        const image = doc.createElement('img')
+        image.className = 'image-preview'
+        image.alt = artifact.name
+        image.src = `data:${artifact.mediaType};base64,${artifact.content}`
+        doc.body.append(image)
+        return
+      }
       const iframe = doc.createElement('iframe')
       iframe.setAttribute('sandbox', 'allow-scripts')
       iframe.setAttribute('referrerpolicy', 'no-referrer')
@@ -180,6 +197,61 @@ window.__ModuleLoader__.load({
 
     function openPreviewPage(request) {
       window.open(previewUrl(request), '_blank', 'noopener,noreferrer')
+    }
+
+    function openProducedPath(producedPath, nativeOpen, sessionId) {
+      const policy = classifyProducedPath(producedPath)
+      if (policy.disposition === 'native') {
+        nativeOpen(producedPath)
+        return
+      }
+      if (policy.disposition === 'reject') {
+        openPreviewPage({
+          kind: 'error',
+          message: translated('这个文件路径无法安全打开。', 'This file path cannot be opened safely.'),
+        })
+        return
+      }
+      if (!sessionId) {
+        openPreviewPage({
+          kind: 'error',
+          message: translated('找不到当前会话，无法预览。', 'The current session is unavailable for preview.'),
+        })
+        return
+      }
+      openPreviewPage({ kind: 'preview', sessionId, producedPath })
+    }
+
+    function basename(value) {
+      const index = Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\'))
+      return index < 0 ? value : value.slice(index + 1)
+    }
+
+    function slashPath(value) {
+      return value.replaceAll('\\', '/').replace(/^\.\//u, '')
+    }
+
+    function mentionResolver(paths, openFile) {
+      return { resolve(value) {
+        let producedPath
+        if (paths.includes(value)) {
+          producedPath = value
+        } else {
+          const normalizedValue = slashPath(value)
+          const matches = paths.filter(path => {
+            if (basename(path) === value) return true
+            const normalizedPath = slashPath(path)
+            return normalizedPath === normalizedValue || normalizedPath.endsWith(`/${normalizedValue}`)
+          })
+          if (matches.length === 1) producedPath = matches[0]
+        }
+        if (!producedPath) return undefined
+        return {
+          open: () => openFile(producedPath),
+          label: translated(`打开 ${producedPath}`, `Open ${producedPath}`),
+          title: producedPath,
+        }
+      } }
     }
 
     function renderPreviewPage(connection, request) {
@@ -195,7 +267,8 @@ window.__ModuleLoader__.load({
       })
           .then(result => {
             if (!result.ok) {
-              showMessage(window, translated('无法预览', 'Cannot preview'), previewFailure(result.error?.code))
+              const code = result.error?.details?.issues?.[0]?.params?.artifactPreviewCode ?? result.error?.code
+              showMessage(window, translated('无法预览', 'Cannot preview'), previewFailure(code))
               return
             }
             showArtifact(window, result.value)
@@ -217,6 +290,8 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       if (!isTunnelPreviewPage()) return
       const connection = ctx.get('connection')
+      const fileMentions = ctx.get('chatFileMentions')
+      let activeSessionId = null
       const request = requestedPreview()
       if (request) {
         renderPreviewPage(connection, request)
@@ -224,21 +299,8 @@ window.__ModuleLoader__.load({
       }
 
       function TunnelProducedFiles(props) {
-        const openFile = producedPath => {
-          const policy = classifyProducedPath(producedPath)
-          if (policy.disposition === 'native') {
-            props.openFile(producedPath)
-            return
-          }
-          if (policy.disposition === 'reject') {
-            openPreviewPage({
-              kind: 'error',
-              message: translated('这个文件路径无法安全打开。', 'This file path cannot be opened safely.'),
-            })
-            return
-          }
-          openPreviewPage({ kind: 'preview', sessionId: props.sessionId, producedPath })
-        }
+        activeSessionId = props.sessionId
+        const openFile = producedPath => openProducedPath(producedPath, props.openFile, props.sessionId)
         return h(ProducedFiles, { ...props, openFile, isLoopback: false })
       }
 
@@ -252,9 +314,22 @@ window.__ModuleLoader__.load({
           hooks: { hostDescription: connection.hostDescription },
         }),
       }, TunnelProducedFiles))
+
+      const nativeForClosing = fileMentions.forClosing.bind(fileMentions)
+      const remoteForClosing = owner => {
+        const paths = selectProduced(owner)
+        if (paths === null) return nativeForClosing(owner)
+        return mentionResolver(paths, producedPath => {
+          openProducedPath(producedPath, owner.openFile, activeSessionId)
+        })
+      }
+      fileMentions.forClosing = remoteForClosing
+      ctx.effect(() => () => {
+        if (fileMentions.forClosing === remoteForClosing) fileMentions.forClosing = nativeForClosing
+      }, 'artifact-preview: prose file mentions')
     }
 
-    exports.inject = ['slots', 'connection']
+    exports.inject = ['slots', 'connection', 'chatFileMentions']
     exports.apply = apply
 
     return module.exports;

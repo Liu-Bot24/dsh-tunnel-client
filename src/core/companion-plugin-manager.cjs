@@ -3,7 +3,7 @@ const path = require('node:path')
 const spawn = process.platform === 'win32' ? require('cross-spawn') : require('node:child_process').spawn
 
 const PLUGIN_NAME = 'dsh-plugin-artifact-preview'
-const PLUGIN_VERSION = '0.1.4'
+const PLUGIN_VERSION = '0.1.5'
 const PLUGIN_ARCHIVE = `${PLUGIN_NAME}-${PLUGIN_VERSION}.tgz`
 
 class CompanionPluginManager {
@@ -82,6 +82,7 @@ class CompanionPluginManager {
     }
 
     await this.#ensureProfile()
+    await this.#pointManifestAtBundledPackage()
     let installError = null
     try {
       await runPluginInstall({
@@ -178,6 +179,20 @@ class CompanionPluginManager {
     const manifest = await this.#readProfileManifest()
     return Array.isArray(manifest?.dsh?.profile?.bundles)
       && manifest.dsh.profile.bundles.includes(PLUGIN_NAME)
+  }
+
+  async #pointManifestAtBundledPackage() {
+    const manifestPath = this.#path().join(this.#profileDirectory(), 'package.json')
+    const manifest = await this.#readProfileManifest()
+    if (!manifest) throw new Error('DSH 插件配置不可用')
+    const dependencies = isPlainRecord(manifest.dependencies) ? manifest.dependencies : {}
+    const packageReference = `file:${this.packagePath}`
+    if (dependencies[PLUGIN_NAME] === packageReference) return
+    manifest.dependencies = {
+      ...dependencies,
+      [PLUGIN_NAME]: packageReference,
+    }
+    await this.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   }
 
   #path() {
@@ -451,6 +466,10 @@ function compareVersions(left, right) {
 function parseVersion(value) {
   const match = String(value).match(/^(\d+)\.(\d+)\.(\d+)/)
   return match ? match.slice(1).map(Number) : [0, 0, 0]
+}
+
+function isPlainRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 module.exports = {

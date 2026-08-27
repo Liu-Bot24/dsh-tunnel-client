@@ -73,9 +73,9 @@ The current Windows package is not signed with a trusted code-signing certificat
 
 ## Remote Artifact Preview Plugin
 
-DSH Artifact Preview is a companion plugin for DSH Tunnel, not a standalone application. DSH Tunnel creates the SSH tunnel and marks the remote WebUI, while the plugin runs on the device that actually hosts DSH, safely reads generated HTML, HTM, and SVG artifacts, and opens a Produced-file click from a remote session in the browser on the device you are currently using.
+DSH Artifact Preview is a companion plugin for DSH Tunnel, not a standalone application. DSH Tunnel creates the SSH tunnel and marks the remote WebUI, while the plugin runs on the device that actually hosts DSH and safely reads generated HTML, HTM, SVG, PNG, JPG, JPEG, WebP, GIF, and AVIF artifacts. Clicking a file in the remote session's Produced row, or the same artifact name when DSH recognizes it in the closing response, opens the preview in the browser on the device you are currently using.
 
-The plugin does not change local DSH pages or intercept file links inside normal response text. Images, text files, and other formats keep the native DSH behavior. Preview access is limited to regular UTF-8 files up to 5 MiB inside the session workspace, and preview content cannot access external networks, submit forms, open popups, navigate the top-level page, or trigger downloads.
+The plugin does not change local DSH pages or intercept ordinary URLs, arbitrary text, or file mentions that DSH has not recognized as artifacts. Unsupported formats keep the native DSH behavior. Text previews are limited to 5 MiB and image previews to 20 MiB; image signatures are verified, and only regular files inside the session workspace can be read. Preview content cannot access external networks, submit forms, open popups, navigate the top-level page, or trigger downloads.
 
 ### Where to Install It
 
@@ -91,11 +91,11 @@ The client shows the local installation state under **Settings → Remote Artifa
 
 To install it on another device, preferably open DSH Tunnel on that device and click **Install Plugin**. You can also install it manually:
 
-1. Download `dsh-plugin-artifact-preview-0.1.4.tgz` from the matching [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest).
+1. Download `dsh-plugin-artifact-preview-0.1.5.tgz` from the matching [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest).
 2. On the device running the target DSH instance, run:
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.4.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.5.tgz
 ```
 
 3. Restart DSH on that device.

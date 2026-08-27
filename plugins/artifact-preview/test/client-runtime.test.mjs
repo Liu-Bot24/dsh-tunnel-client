@@ -20,7 +20,7 @@ function fakeDocument() {
   }
 }
 
-function loadClient(href, { popup = true } = {}) {
+function loadClient(href, { popup = true, producedPaths = ['demo.html'] } = {}) {
   let definition
   const opened = []
   const assigned = []
@@ -63,7 +63,7 @@ function loadClient(href, { popup = true } = {}) {
   const plugin = definition.factory(id => {
     if (id === 'react') return React
     if (id === '@deepseek-ai/dsh-client-ui-deliverables/client') {
-      return { ProducedFiles, producedForClosing: () => ['demo.html'] }
+      return { ProducedFiles, producedForClosing: () => producedPaths }
     }
     throw new Error(`unexpected module ${id}`)
   })
@@ -76,9 +76,14 @@ function loadClient(href, { popup = true } = {}) {
       },
     },
   }
+  const fileMentions = { forClosing: () => undefined }
+  const effects = []
   let registration
   const ctx = {
-    get: () => connection,
+    get: name => name === 'connection' ? connection : fileMentions,
+    effect(callback) {
+      effects.push(callback())
+    },
     slots: {
       inject(_name, callback) { callback() },
       register(options, component) {
@@ -88,7 +93,7 @@ function loadClient(href, { popup = true } = {}) {
     },
   }
   plugin.apply(ctx)
-  return { assigned, opened, plugin, registration, rpcCalls }
+  return { assigned, effects, fileMentions, opened, plugin, registration, rpcCalls }
 }
 
 test('does not register any UI contribution on an unmarked local page', () => {
@@ -134,6 +139,70 @@ test('never replaces the conversation tab when a popup is unavailable', () => {
   assert.equal(runtime.assigned.length, 0)
   assert.equal(runtime.opened.length, 0)
   assert.deepEqual(native, [])
+})
+
+test('routes browser-native image extensions through the remote preview page', () => {
+  const runtime = loadClient('http://127.0.0.1:13080/?dsh_tunnel_preview=web')
+  const native = []
+  const rendered = runtime.registration.component({ sessionId: 'one', openFile: path => native.push(path) })
+  for (const filename of ['photo.png', 'photo.jpg', 'photo.jpeg', 'photo.webp', 'photo.gif', 'photo.avif']) {
+    rendered.props.openFile(filename)
+  }
+  assert.equal(runtime.opened.length, 6)
+  assert.deepEqual(native, [])
+})
+
+test('routes produced-file mentions in closing prose through the same remote preview page', () => {
+  const runtime = loadClient('http://127.0.0.1:13080/?dsh_tunnel_preview=web')
+  const native = []
+  runtime.registration.component({ sessionId: 'one', openFile: path => native.push(path) })
+  const mentions = runtime.fileMentions.forClosing({
+    turn: { data: { get: () => ({}) } },
+    seq: 1,
+    openFile: path => native.push(path),
+  })
+  const mention = mentions.resolve('demo.html')
+  assert.equal(mention.title, 'demo.html')
+  mention.open()
+  assert.equal(runtime.opened.length, 1)
+  assert.deepEqual(native, [])
+  const openedUrl = new URL(runtime.opened[0].url)
+  assert.equal(openedUrl.searchParams.get('dsh_tunnel_preview'), 'web')
+  assert.ok(openedUrl.searchParams.has('dsh_artifact_preview'))
+})
+
+test('routes one unique relative-path mention to its absolute produced file', () => {
+  const runtime = loadClient('http://127.0.0.1:13080/?dsh_tunnel_preview=web', {
+    producedPaths: ['/workspace/pelican-bicycle/index.html'],
+  })
+  runtime.registration.component({ sessionId: 'one', openFile: () => {} })
+  const mentions = runtime.fileMentions.forClosing({
+    turn: { data: { get: () => ({}) } },
+    seq: 1,
+    openFile: () => {},
+  })
+  const mention = mentions.resolve('pelican-bicycle/index.html')
+  assert.equal(mention.title, '/workspace/pelican-bicycle/index.html')
+  mention.open()
+  const requestUrl = new URL(runtime.opened[0].url)
+  assert.ok(requestUrl.searchParams.has('dsh_artifact_preview'))
+})
+
+test('keeps an ambiguous relative-path mention inert', () => {
+  const runtime = loadClient('http://127.0.0.1:13080/?dsh_tunnel_preview=web', {
+    producedPaths: [
+      '/workspace/first/pelican-bicycle/index.html',
+      '/workspace/second/pelican-bicycle/index.html',
+    ],
+  })
+  runtime.registration.component({ sessionId: 'one', openFile: () => {} })
+  const mentions = runtime.fileMentions.forClosing({
+    turn: { data: { get: () => ({}) } },
+    seq: 1,
+    openFile: () => {},
+  })
+  assert.equal(mentions.resolve('pelican-bicycle/index.html'), undefined)
+  assert.equal(runtime.opened.length, 0)
 })
 
 test('opens each preview request without falling back to native open', () => {

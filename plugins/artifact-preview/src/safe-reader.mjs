@@ -6,7 +6,18 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const { classifyProducedPath } = require('./path-policy.cjs')
 
-export const MAX_ARTIFACT_BYTES = 5 * 1024 * 1024
+const IMAGE_MEDIA_TYPES = new Map([
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.webp', 'image/webp'],
+  ['.gif', 'image/gif'],
+  ['.avif', 'image/avif'],
+])
+
+export const MAX_TEXT_ARTIFACT_BYTES = 5 * 1024 * 1024
+export const MAX_IMAGE_ARTIFACT_BYTES = 20 * 1024 * 1024
+export const MAX_ARTIFACT_BYTES = MAX_TEXT_ARTIFACT_BYTES
 
 function fail(code, message) {
   const error = new Error(message)
@@ -53,6 +64,48 @@ function stableFile(left, right) {
     && left.ctimeNs === right.ctimeNs
 }
 
+function startsWith(bytes, signature) {
+  return bytes.length >= signature.length
+    && signature.every((value, index) => bytes[index] === value)
+}
+
+function ascii(bytes, start, length) {
+  return bytes.subarray(start, start + length).toString('ascii')
+}
+
+function validAvif(bytes) {
+  if (bytes.length < 16 || ascii(bytes, 4, 4) !== 'ftyp') return false
+  const boxSize = bytes.readUInt32BE(0)
+  if (boxSize < 16) return false
+  const end = Math.min(boxSize, bytes.length, 128)
+  for (let offset = 8; offset + 4 <= end; offset += 4) {
+    const brand = ascii(bytes, offset, 4)
+    if (brand === 'avif' || brand === 'avis') return true
+  }
+  return false
+}
+
+function validImageSignature(extension, bytes) {
+  switch (extension) {
+    case '.png':
+      return startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    case '.jpg':
+    case '.jpeg':
+      return startsWith(bytes, [0xff, 0xd8, 0xff])
+        && bytes.length >= 4
+        && bytes.at(-2) === 0xff
+        && bytes.at(-1) === 0xd9
+    case '.gif':
+      return ascii(bytes, 0, 6) === 'GIF87a' || ascii(bytes, 0, 6) === 'GIF89a'
+    case '.webp':
+      return bytes.length >= 12 && ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 4) === 'WEBP'
+    case '.avif':
+      return validAvif(bytes)
+    default:
+      return false
+  }
+}
+
 async function readExact(fileHandle, size) {
   const bytes = Buffer.alloc(size)
   let offset = 0
@@ -83,7 +136,9 @@ export async function readPreviewArtifact(root, producedPath) {
     const before = await fileHandle.stat({ bigint: true })
     if (!before.isFile()) fail('not-regular-file', 'Only regular files can be previewed.')
     if (before.nlink !== 1n) fail('linked-file', 'Files with multiple links cannot be previewed.')
-    if (before.size > BigInt(MAX_ARTIFACT_BYTES)) fail('file-too-large', 'The produced file is larger than 5 MiB.')
+    const imageMediaType = IMAGE_MEDIA_TYPES.get(policy.extension)
+    const maximumBytes = imageMediaType ? MAX_IMAGE_ARTIFACT_BYTES : MAX_TEXT_ARTIFACT_BYTES
+    if (before.size > BigInt(maximumBytes)) fail('file-too-large', 'The produced file is too large to preview.')
 
     const canonicalRoot = await realpath(root)
     const canonicalFile = await realpath(candidate)
@@ -95,6 +150,20 @@ export async function readPreviewArtifact(root, producedPath) {
     const after = await fileHandle.stat({ bigint: true })
     if (!stableFile(before, after)) fail('file-changed', 'The produced file changed while it was being read.')
 
+    if (imageMediaType) {
+      if (!validImageSignature(policy.extension, bytes)) {
+        fail('invalid-image', 'The produced image does not match its file type.')
+      }
+      return Object.freeze({
+        content: bytes.toString('base64'),
+        encoding: 'base64',
+        mediaType: imageMediaType,
+        extension: policy.extension,
+        name: path.basename(candidate),
+        size: bytes.byteLength,
+      })
+    }
+
     let content
     try {
       content = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
@@ -103,6 +172,8 @@ export async function readPreviewArtifact(root, producedPath) {
     }
     return Object.freeze({
       content,
+      encoding: 'utf8',
+      mediaType: policy.extension === '.svg' ? 'image/svg+xml' : 'text/html',
       extension: policy.extension,
       name: path.basename(candidate),
       size: bytes.byteLength,
@@ -112,4 +183,4 @@ export async function readPreviewArtifact(root, producedPath) {
   }
 }
 
-export { contained, resolveCandidate }
+export { contained, resolveCandidate, validImageSignature }

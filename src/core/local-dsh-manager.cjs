@@ -39,6 +39,7 @@ class LocalDshManager extends EventEmitter {
     terminateProcess = terminateChildProcess,
     resolveVersion = resolveDshVersion,
     noOpenSupported = null,
+    platform = process.platform,
   } = {}) {
     super()
     this.spawnProcess = spawnProcess
@@ -51,9 +52,11 @@ class LocalDshManager extends EventEmitter {
     this.pollInterval = pollInterval
     this.terminateProcess = terminateProcess
     this.resolveVersion = resolveVersion
+    this.platform = platform
     this.noOpenSupported = typeof noOpenSupported === 'boolean' ? noOpenSupported : null
     this.child = null
     this.startPromise = null
+    this.stopPromise = null
     this.startPort = null
     this.startCancelled = false
     this.state = Object.freeze({ state: 'stopped', port: 3080, owned: false, error: null })
@@ -64,7 +67,7 @@ class LocalDshManager extends EventEmitter {
   }
 
   hasOwnedProcess() {
-    return Boolean(this.child && !this.child.exited)
+    return Boolean(this.child && !this.child.cleaned)
   }
 
   setState(next) {
@@ -77,7 +80,7 @@ class LocalDshManager extends EventEmitter {
   }
 
   async inspect(port = this.state.port) {
-    if (this.startPromise || this.state.state === 'stopping') return this.state
+    if (this.startPromise || this.stopPromise || this.state.state === 'stopping') return this.state
     if (this.hasOwnedProcess()) return this.state
     const result = await this.probe(port)
     if (result === 'dsh') return this.setState({ state: 'running', port, owned: false, error: null })
@@ -92,7 +95,7 @@ class LocalDshManager extends EventEmitter {
       if (this.startPort === port) return this.startPromise
       return Promise.reject(new Error('本机 DSH 正在使用另一个端口启动'))
     }
-    if (this.state.state === 'stopping') {
+    if (this.stopPromise || this.state.state === 'stopping') {
       return Promise.reject(new Error('本机 DSH 正在切换状态，请稍后再试'))
     }
     if (this.hasOwnedProcess()) {
@@ -129,6 +132,8 @@ class LocalDshManager extends EventEmitter {
         shell: false,
         stdio: ['ignore', 'ignore', 'pipe'],
         windowsHide: true,
+        // Keep each owned POSIX tree separate from the desktop app and other DSH instances.
+        detached: this.platform !== 'win32',
       })
     } catch (error) {
       const translated = translateSpawnError(error)
@@ -153,7 +158,7 @@ class LocalDshManager extends EventEmitter {
       if (this.startCancelled) throw new Error('DSH 启动已取消')
       return this.setState({ state: 'running', port, owned: true, error: null })
     } catch (error) {
-      if (!info.exited) {
+      if (!info.cleaned) {
         info.intentional = true
         try {
           await this.#terminateOwnedChild(info)
@@ -191,7 +196,10 @@ class LocalDshManager extends EventEmitter {
     const info = {
       process: child,
       exited: false,
+      cleaned: false,
+      processGroup: this.platform !== 'win32' && Number.isInteger(child.pid) && child.pid > 0,
       intentional: false,
+      terminationPromise: null,
       exitPromise: null,
       stderr: '',
     }
@@ -202,23 +210,42 @@ class LocalDshManager extends EventEmitter {
       child.once('error', (error) => {
         if (child.pid == null) {
           info.exited = true
+          info.cleaned = true
           if (this.child === info) this.child = null
         }
         resolve({ type: 'error', error })
       })
       child.once('exit', (code, signal) => {
         info.exited = true
-        if (this.child === info) this.child = null
-        if (!info.intentional) {
-          this.setState({ state: 'error', port, owned: false, error: 'DSH 已停止' })
+        if (!info.processGroup) {
+          info.cleaned = true
+          if (this.child === info) this.child = null
         }
         resolve({ type: 'exit', code, signal, stderr: info.stderr })
+        if (!info.intentional) {
+          this.setState({ state: 'error', port, owned: this.hasOwnedProcess(), error: 'DSH 已停止' })
+          if (info.processGroup && !this.startPromise) {
+            info.intentional = true
+            this.#terminateOwnedChild(info).then(
+              () => this.setState({ state: 'error', port, owned: this.hasOwnedProcess(), error: 'DSH 已停止' }),
+              () => this.setState({ state: 'error', port, owned: true, error: 'DSH 停止失败' }),
+            )
+          }
+        }
       })
     })
     return info
   }
 
-  async stop() {
+  stop() {
+    if (this.stopPromise) return this.stopPromise
+    this.stopPromise = this.#stop().finally(() => {
+      this.stopPromise = null
+    })
+    return this.stopPromise
+  }
+
+  async #stop() {
     if (this.startPromise) {
       this.startCancelled = true
       const starting = this.startPromise
@@ -247,7 +274,7 @@ class LocalDshManager extends EventEmitter {
       this.setState({
         state: 'error',
         port,
-        owned: Boolean(this.child === info && !info.exited),
+        owned: Boolean(this.child === info && !info.cleaned),
         error: 'DSH 停止失败',
       })
       throw error
@@ -256,13 +283,27 @@ class LocalDshManager extends EventEmitter {
   }
 
   async #terminateOwnedChild(info) {
-    await this.terminateProcess(info.process)
-    const outcome = await Promise.race([
-      info.exitPromise,
-      delay(this.shutdownTimeout).then(() => ({ type: 'timeout' })),
-    ])
-    if (outcome.type === 'timeout' && !info.exited) throw new Error('DSH 进程未能退出')
-    if (!info.exited) throw new Error('DSH 进程未能退出')
+    if (info.cleaned) return
+    if (info.terminationPromise) return info.terminationPromise
+    const termination = (async () => {
+      await this.terminateProcess(info.process, {
+        platform: this.platform,
+        processGroup: info.processGroup,
+        gracefulTimeout: this.shutdownTimeout,
+        forceTimeout: this.shutdownTimeout,
+        pollInterval: this.pollInterval,
+      })
+      if (!info.exited) await waitForChildExit(info, this.shutdownTimeout)
+      if (!info.exited) throw new Error('DSH 进程未能退出')
+      info.cleaned = true
+      if (this.child === info) this.child = null
+    })()
+    info.terminationPromise = termination
+    try {
+      await termination
+    } finally {
+      if (info.terminationPromise === termination) info.terminationPromise = null
+    }
   }
 }
 
@@ -329,13 +370,38 @@ function supportsNoOpen(version) {
   return parsed.rc === null || parsed.rc >= NO_OPEN_MINIMUM.rc
 }
 
-function terminateChildProcess(child, {
+async function terminateChildProcess(child, {
   platform = process.platform,
   spawnProcess = spawn,
+  processGroup = false,
+  signalProcess = process.kill.bind(process),
+  gracefulTimeout = 5_000,
+  forceTimeout = 5_000,
+  pollInterval = 50,
 } = {}) {
+  if (platform !== 'win32' && processGroup && Number.isInteger(child.pid) && child.pid > 0) {
+    const group = -child.pid
+    const signal = value => {
+      try { signalProcess(group, value); return true } catch (error) {
+        if (error.code === 'ESRCH') return false
+        throw error
+      }
+    }
+    const gone = async timeout => {
+      const deadline = Date.now() + timeout
+      do {
+        if (!signal(0)) return true
+        await delay(Math.min(pollInterval, Math.max(1, deadline - Date.now())))
+      } while (Date.now() < deadline)
+      return !signal(0)
+    }
+    if (!signal('SIGTERM') || await gone(gracefulTimeout)) return
+    if (!signal('SIGKILL') || await gone(forceTimeout)) return
+    throw new Error('DSH 进程树未能退出')
+  }
   if (platform !== 'win32' || !Number.isInteger(child.pid)) {
     child.kill()
-    return Promise.resolve()
+    return
   }
   return new Promise((resolve, reject) => {
     const killer = spawnProcess('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], {
@@ -344,13 +410,32 @@ function terminateChildProcess(child, {
       stdio: ['ignore', 'ignore', 'pipe'],
     })
     let stderr = ''
+    const timer = setTimeout(() => {
+      killer.kill()
+      reject(new Error('DSH 进程树终止超时'))
+    }, forceTimeout)
     killer.stderr?.on('data', (chunk) => {
       stderr = `${stderr}${String(chunk)}`.slice(-4096)
     })
-    killer.once('error', reject)
+    killer.once('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
     killer.once('exit', (code) => {
+      clearTimeout(timer)
       if (code === 0) resolve()
       else reject(new Error(stderr.trim() || '无法终止 DSH 进程树'))
+    })
+  })
+}
+
+function waitForChildExit(info, timeout) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('DSH 进程未能退出')), timeout)
+    info.exitPromise.then(outcome => {
+      clearTimeout(timer)
+      if (info.exited) resolve(outcome)
+      else reject(new Error('DSH 进程未能退出'))
     })
   })
 }

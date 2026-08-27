@@ -73,9 +73,9 @@ shasum -a 256 -c DSH.Tunnel-<版本>-macos-arm64.dmg.sha256
 
 ## 远程产物预览插件
 
-DSH Artifact Preview 是 DSH Tunnel 的配套插件，不是独立应用。DSH Tunnel 负责建立 SSH 隧道并标记远程 WebUI，插件安装在实际运行 DSH 的设备上，负责安全读取会话生成的 HTML、HTM 和 SVG 产物，让你点击远程会话底部的“产物”文件名时，直接在当前操作设备的浏览器中预览。
+DSH Artifact Preview 是 DSH Tunnel 的配套插件，不是独立应用。DSH Tunnel 负责建立 SSH 隧道并标记远程 WebUI，插件安装在实际运行 DSH 的设备上，负责安全读取会话生成的 HTML、HTM、SVG、PNG、JPG、JPEG、WebP、GIF 和 AVIF 产物。点击远程会话底部的“产物”文件名，或收尾回复中由 DSH 识别出的同一产物文件名，都会在当前操作设备的浏览器中打开预览。
 
-插件不会改变本机 DSH 页面，也不会接管回复正文里的文件链接；图片、文本和其他文件继续使用 DSH 原有行为。预览仅允许读取会话工作目录内不超过 5 MiB 的普通 UTF-8 文件，并禁止预览内容访问外部网络、提交表单、打开弹窗、跳转顶层页面或触发下载。
+插件不会改变本机 DSH 页面，也不会接管普通网址、任意文本或未被 DSH 识别为产物的文件提及；未支持的文件继续使用 DSH 原有行为。文本预览限制为 5 MiB，图片预览限制为 20 MiB；插件会校验图片文件头，并且只允许读取会话工作目录内的普通文件。预览内容不能访问外部网络、提交表单、打开弹窗、跳转顶层页面或触发下载。
 
 ### 安装位置
 
@@ -91,11 +91,11 @@ DSH Artifact Preview 是 DSH Tunnel 的配套插件，不是独立应用。DSH T
 
 需要安装到另一台设备时，优先在那台设备上打开 DSH Tunnel 并点击“安装插件”。也可以手动安装：
 
-1. 从与 DSH Tunnel 版本对应的 [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest) 下载 `dsh-plugin-artifact-preview-0.1.4.tgz`。
+1. 从与 DSH Tunnel 版本对应的 [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest) 下载 `dsh-plugin-artifact-preview-0.1.5.tgz`。
 2. 在运行目标 DSH 的设备上执行：
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.4.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.5.tgz
 ```
 
 3. 重启该设备上的 DSH。

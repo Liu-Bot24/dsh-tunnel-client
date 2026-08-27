@@ -24,15 +24,29 @@ test('returns preview content for an exact read request', async () => {
   })
 })
 
+test('returns one verified image payload for a preview request', async () => {
+  await fixture(async ({ root, handler }) => {
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    await writeFile(path.join(root, 'demo.png'), bytes)
+    const result = await handler('read', { sessionId: 'session-1', producedPath: 'demo.png' }, new AbortController().signal)
+    assert.equal(result.ok, true)
+    assert.equal(result.value.encoding, 'base64')
+    assert.equal(result.value.mediaType, 'image/png')
+    assert.equal(result.value.content, bytes.toString('base64'))
+  })
+})
+
 test('fails closed for native files and malformed payloads', async () => {
   await fixture(async ({ root, handler }) => {
     await writeFile(path.join(root, 'notes.txt'), 'notes')
     const native = await handler('read', { sessionId: 'session-1', producedPath: 'notes.txt' }, new AbortController().signal)
     assert.equal(native.ok, false)
-    assert.equal(native.error.code, 'not-previewable')
+    assert.equal(native.error.code, 'bad-request')
+    assert.equal(native.error.details.issues[0].params.artifactPreviewCode, 'not-previewable')
 
     const malformed = await handler('read', { sessionId: 'session-1', producedPath: 'demo.html', cwd: root }, new AbortController().signal)
     assert.equal(malformed.ok, false)
     assert.equal(malformed.error.code, 'bad-request')
+    assert.ok(Array.isArray(malformed.error.details.issues))
   })
 })

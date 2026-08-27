@@ -1,6 +1,16 @@
 'use strict'
 
-const PREVIEW_EXTENSIONS = new Set(['.html', '.htm', '.svg'])
+const PREVIEW_EXTENSIONS = new Set([
+  '.html',
+  '.htm',
+  '.svg',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+  '.gif',
+  '.avif',
+])
 
 function reject(reason) {
   return Object.freeze({ disposition: 'reject', reason })
