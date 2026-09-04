@@ -3,6 +3,7 @@ const { spawn } = require('node:child_process')
 const net = require('node:net')
 const { buildSshArgs } = require('./ssh.cjs')
 const { loopbackUrl, normalizeEndpoint } = require('./endpoint.cjs')
+const { DSH_AUTH_REQUIRED_BODY, rewriteAuthenticatedWebUrl } = require('./web-auth.cjs')
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -17,7 +18,11 @@ async function waitForHttp(url, {
   while (Date.now() < deadline) {
     try {
       const response = await fetchImpl(url, { signal: AbortSignal.timeout(1_000), redirect: 'manual' })
-      if (response.ok) return
+      if (response.ok) return { authRequired: false }
+      if (response.status === 401) {
+        const body = await response.text()
+        if (body.includes(DSH_AUTH_REQUIRED_BODY)) return { authRequired: true }
+      }
     } catch {}
     await delay(intervalMs)
   }
@@ -65,6 +70,7 @@ class TunnelManager extends EventEmitter {
     waitForReady = waitForHttp,
     assertPortAvailable = assertLocalPortAvailable,
     forceTerminateProcess = forceTerminateTunnelProcess,
+    resolveRemoteAuth = async () => null,
     sshCommand = 'ssh',
     identityFile = null,
     stopTimeoutMs = 1_000,
@@ -75,6 +81,7 @@ class TunnelManager extends EventEmitter {
     this.waitForReady = waitForReady
     this.assertPortAvailable = assertPortAvailable
     this.forceTerminateProcess = forceTerminateProcess
+    this.resolveRemoteAuth = resolveRemoteAuth
     this.sshCommand = sshCommand
     this.identityFile = identityFile
     this.stopTimeoutMs = stopTimeoutMs
@@ -122,6 +129,9 @@ class TunnelManager extends EventEmitter {
       exitPromise: null,
       startPromise: null,
       claimed: true,
+      authUrl: null,
+      authRequired: false,
+      authAvailable: false,
     }
     this.records.set(endpoint.id, record)
     this.portClaims.set(endpoint.localPort, endpoint.id)
@@ -146,6 +156,8 @@ class TunnelManager extends EventEmitter {
       record.exitPromise = new Promise((resolve) => {
         child.once('exit', (code, signal) => {
           record.exited = true
+          record.authUrl = null
+          record.authAvailable = false
           this.#releasePort(record)
           if (record.state !== 'error') {
             record.state = record.intentionalStop ? 'stopped' : 'error'
@@ -171,7 +183,10 @@ class TunnelManager extends EventEmitter {
         record.intentionalStop = true
         child.kill()
       }
-      const ready = this.waitForReady(loopbackUrl(record.endpoint)).then(() => ({ type: 'ready' }))
+      const ready = this.waitForReady(loopbackUrl(record.endpoint)).then(result => ({
+        type: 'ready',
+        authRequired: Boolean(result?.authRequired),
+      }))
       const outcome = await Promise.race([ready, record.exitPromise])
       if (outcome.type === 'error') throw new Error(record.error)
       if (outcome.type !== 'ready') {
@@ -179,6 +194,18 @@ class TunnelManager extends EventEmitter {
         throw new Error(tunnelExitMessage(outcome.code, outcome.signal, record.stderr))
       }
       if (record.stopRequested) throw new Error('SSH 连接已取消')
+      record.authRequired = outcome.authRequired
+      if (record.authRequired) {
+        try {
+          const remoteAuthUrl = await this.resolveRemoteAuth(record.endpoint)
+          record.authUrl = remoteAuthUrl
+            ? rewriteAuthenticatedWebUrl(remoteAuthUrl, record.endpoint)
+            : null
+        } catch {
+          record.authUrl = null
+        }
+        record.authAvailable = Boolean(record.authUrl)
+      }
       record.state = 'connected'
       record.error = null
       this.#emit(record)
@@ -191,6 +218,8 @@ class TunnelManager extends EventEmitter {
       }
       if (!record.child || record.exited) this.#releasePort(record)
       record.state = record.stopRequested && !cleanupError ? 'stopped' : 'error'
+      record.authUrl = null
+      record.authAvailable = false
       record.error = record.stopRequested && !cleanupError ? null : (cleanupError?.message ?? error.message)
       this.#emit(record)
       throw cleanupError ?? error
@@ -237,6 +266,12 @@ class TunnelManager extends EventEmitter {
     return Promise.all([...this.records.keys()].map((id) => this.stop(id)))
   }
 
+  getOpenUrl(id) {
+    const record = this.records.get(id)
+    if (record === undefined || record.state !== 'connected') throw new Error('请先连接，再打开 DSH')
+    return record.authUrl ?? loopbackUrl(record.endpoint)
+  }
+
   async #waitForExit(record) {
     const attempts = Math.max(1, Math.ceil(this.stopTimeoutMs / this.pollIntervalMs))
     for (let index = 0; index < attempts && !record.exited; index += 1) {
@@ -276,6 +311,8 @@ class TunnelManager extends EventEmitter {
       pid: record.child?.pid ?? null,
       active: this.#isActive(record),
       error: record.error,
+      authRequired: record.authRequired,
+      authAvailable: record.authAvailable,
     })
   }
 

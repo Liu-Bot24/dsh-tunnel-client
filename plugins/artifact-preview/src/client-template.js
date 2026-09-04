@@ -10,7 +10,9 @@ const ARTIFACT_CSP = "default-src 'none'; base-uri 'none'; connect-src 'none'; i
 
 function isTunnelPreviewPage() {
   try {
-    return new URL(window.location.href).searchParams.get(MARKER) === MARKER_VALUE
+    const url = new URL(window.location.href)
+    return url.searchParams.get(MARKER) === MARKER_VALUE
+      || new URLSearchParams(url.hash.slice(1)).get(MARKER) === MARKER_VALUE
   } catch {
     return false
   }

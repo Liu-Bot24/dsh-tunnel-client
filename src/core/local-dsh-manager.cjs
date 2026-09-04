@@ -7,6 +7,7 @@ const childProcess = require('node:child_process')
 const crossSpawn = process.platform === 'win32' ? require('cross-spawn') : null
 const spawn = crossSpawn ?? childProcess.spawn
 const spawnSync = crossSpawn?.sync ?? childProcess.spawnSync
+const { DSH_AUTH_REQUIRED_BODY, parseDshWebUrlLine } = require('./web-auth.cjs')
 
 const DSH_TITLE = '<title>DeepSeek Harness</title>'
 const NO_OPEN_MINIMUM = Object.freeze({ major: 0, minor: 1, patch: 0, rc: 8 })
@@ -40,6 +41,7 @@ class LocalDshManager extends EventEmitter {
     resolveVersion = resolveDshVersion,
     noOpenSupported = null,
     platform = process.platform,
+    authHandoff = null,
   } = {}) {
     super()
     this.spawnProcess = spawnProcess
@@ -53,6 +55,7 @@ class LocalDshManager extends EventEmitter {
     this.terminateProcess = terminateProcess
     this.resolveVersion = resolveVersion
     this.platform = platform
+    this.authHandoff = authHandoff
     this.noOpenSupported = typeof noOpenSupported === 'boolean' ? noOpenSupported : null
     this.child = null
     this.startPromise = null
@@ -70,6 +73,13 @@ class LocalDshManager extends EventEmitter {
     return Boolean(this.child && !this.child.cleaned)
   }
 
+  getOpenUrl(port = this.state.port) {
+    if (this.child && !this.child.cleaned && this.child.port === port && this.child.authUrl) {
+      return this.child.authUrl
+    }
+    return `http://127.0.0.1:${port}/`
+  }
+
   setState(next) {
     const updated = { ...this.state, ...next }
     const unchanged = Object.keys(updated).every((key) => Object.is(updated[key], this.state[key]))
@@ -83,7 +93,9 @@ class LocalDshManager extends EventEmitter {
     if (this.startPromise || this.stopPromise || this.state.state === 'stopping') return this.state
     if (this.hasOwnedProcess()) return this.state
     const result = await this.probe(port)
-    if (result === 'dsh') return this.setState({ state: 'running', port, owned: false, error: null })
+    if (result === 'dsh' || result === 'dsh-auth') {
+      return this.setState({ state: 'running', port, owned: false, error: null })
+    }
     if (result === 'occupied') {
       return this.setState({ state: 'error', port, owned: false, error: `本地端口 ${port} 已被其他程序占用` })
     }
@@ -118,8 +130,12 @@ class LocalDshManager extends EventEmitter {
     if (this.startCancelled) {
       return this.setState({ state: 'stopped', port, owned: false, error: null })
     }
-    if (existing === 'dsh') return this.setState({ state: 'running', port, owned: false, error: null })
+    if (existing === 'dsh' || existing === 'dsh-auth') {
+      return this.setState({ state: 'running', port, owned: false, error: null })
+    }
     if (existing === 'occupied') throw new LocalPortOccupiedError(port)
+
+    await this.authHandoff?.clear(port)
 
     this.setState({ state: 'starting', port, owned: false, error: null })
     let child
@@ -130,7 +146,7 @@ class LocalDshManager extends EventEmitter {
         cwd: this.cwd,
         env: this.environment,
         shell: false,
-        stdio: ['ignore', 'ignore', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
         // Keep each owned POSIX tree separate from the desktop app and other DSH instances.
         detached: this.platform !== 'win32',
@@ -147,9 +163,18 @@ class LocalDshManager extends EventEmitter {
 
     try {
       const outcome = await Promise.race([
-        waitForDsh(this.probe, port, this.startupTimeout, this.pollInterval, () => (
-          this.startCancelled || this.child !== info || info.exited
-        )).then(() => ({ type: 'ready' })),
+        waitForDsh(
+          this.probe,
+          port,
+          this.startupTimeout,
+          this.pollInterval,
+          () => this.startCancelled || this.child !== info || info.exited,
+          async () => {
+            if (!info.authUrl) return false
+            await info.authPublishPromise
+            return true
+          },
+        ).then(() => ({ type: 'ready' })),
         info.exitPromise,
       ])
       if (outcome.type === 'error') throw translateSpawnError(outcome.error)
@@ -201,8 +226,26 @@ class LocalDshManager extends EventEmitter {
       intentional: false,
       terminationPromise: null,
       exitPromise: null,
+      port,
       stderr: '',
+      stdoutBuffer: '',
+      authUrl: null,
+      authPublishPromise: Promise.resolve(),
     }
+    child.stdout?.on('data', (chunk) => {
+      info.stdoutBuffer = `${info.stdoutBuffer}${String(chunk)}`.slice(-8192)
+      const lines = info.stdoutBuffer.split(/\r?\n/u)
+      info.stdoutBuffer = lines.pop() ?? ''
+      for (const line of lines) {
+        if (info.authUrl) break
+        const authUrl = parseDshWebUrlLine(line, port)
+        if (!authUrl) continue
+        info.authUrl = authUrl
+        info.authPublishPromise = this.authHandoff
+          ? this.authHandoff.publish(port, authUrl, child.pid)
+          : Promise.resolve()
+      }
+    })
     child.stderr?.on('data', (chunk) => {
       info.stderr = `${info.stderr}${String(chunk)}`.slice(-8192)
     })
@@ -217,6 +260,8 @@ class LocalDshManager extends EventEmitter {
       })
       child.once('exit', (code, signal) => {
         info.exited = true
+        info.authUrl = null
+        this.authHandoff?.remove(port).catch(() => undefined)
         if (!info.processGroup) {
           info.cleaned = true
           if (this.child === info) this.child = null
@@ -270,6 +315,7 @@ class LocalDshManager extends EventEmitter {
     try {
       await this.#terminateOwnedChild(info)
       await waitForDshStop(this.probe, port, this.shutdownTimeout, this.pollInterval)
+      await this.authHandoff?.remove(port)
     } catch (error) {
       this.setState({
         state: 'error',
@@ -465,7 +511,11 @@ function probeLocalService(port, { timeout = 800 } = {}) {
       response.on('data', (chunk) => {
         if (body.length < 64_000) body += chunk
       })
-      response.on('end', () => resolve(body.includes(DSH_TITLE) ? 'dsh' : 'occupied'))
+      response.on('end', () => {
+        if (body.includes(DSH_TITLE)) return resolve('dsh')
+        if (response.statusCode === 401 && body.includes(DSH_AUTH_REQUIRED_BODY)) return resolve('dsh-auth')
+        return resolve('occupied')
+      })
     })
     request.once('timeout', () => {
       request.destroy()
@@ -495,11 +545,20 @@ async function findNextAvailablePort(start = 3081, available = isPortAvailable) 
   throw new Error('没有可用的本地端口')
 }
 
-async function waitForDsh(probe, port, timeout, interval, cancelled = () => false) {
+async function waitForDsh(
+  probe,
+  port,
+  timeout,
+  interval,
+  cancelled = () => false,
+  authenticatedReady = async () => false,
+) {
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) {
     if (cancelled()) throw new Error('DSH 启动已取消')
-    if (await probe(port) === 'dsh') return
+    const result = await probe(port)
+    if (result === 'dsh') return
+    if (result === 'dsh-auth' && await authenticatedReady()) return
     await delay(interval)
   }
   throw new Error('DSH 启动超时')

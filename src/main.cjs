@@ -15,6 +15,8 @@ const {
 } = require('./core/local-dsh-manager.cjs')
 const { resolveDshRuntime } = require('./core/dsh-runtime.cjs')
 const { createSerialExecutor } = require('./core/serial-executor.cjs')
+const { readRemoteWebAuthUrl } = require('./core/remote-web-auth.cjs')
+const { WebAuthHandoffStore } = require('./core/web-auth.cjs')
 
 app.enableSandbox()
 const isPrimaryInstance = app.requestSingleInstanceLock()
@@ -30,6 +32,7 @@ let companionPlugin
 const runLocalDshOperation = createSerialExecutor()
 let endpointStore
 let settingsStore
+let webAuthHandoff
 let sshPairing
 let tunnels
 let endpointStoreWritable = true
@@ -86,9 +89,9 @@ function notifyEndpointsChanged() {
 }
 
 async function openLocalDsh(port) {
-  const url = `http://127.0.0.1:${port}/`
-  await shell.openExternal(url)
-  return url
+  const publicUrl = `http://127.0.0.1:${port}/`
+  await shell.openExternal(localDsh.getOpenUrl(port))
+  return publicUrl
 }
 
 async function startTunnel(id) {
@@ -108,14 +111,14 @@ async function openEndpoint(id) {
   if (endpoint.mode === 'ssh') {
     const state = tunnels.get(id)
     if (state?.state !== 'connected') throw new Error('请先连接，再打开 DSH')
-    url = state.url
+    url = tunnels.getOpenUrl(id)
   } else {
     const state = await localDsh.inspect(endpoint.remotePort)
     if (state.state !== 'running') throw new Error('本机 DSH 尚未启动')
-    url = loopbackUrl(endpoint)
+    url = localDsh.getOpenUrl(endpoint.remotePort)
   }
   await shell.openExternal(url)
-  return url
+  return loopbackUrl(endpoint)
 }
 
 async function startLocalDsh() {
@@ -180,6 +183,7 @@ function configureDshServices(runtime) {
     noOpenSupported: runtime.noOpenSupported,
     startupTimeout: runtime.startupTimeout,
     environment,
+    authHandoff: webAuthHandoff,
   })
   companionPlugin = new CompanionPluginManager({
     homeDirectory: app.getPath('home'),
@@ -473,8 +477,13 @@ app.whenReady().then(async () => {
     storageDirectory: path.join(app.getPath('userData'), 'ssh'),
     knownHostsPath: path.join(app.getPath('home'), '.ssh', 'known_hosts'),
   })
+  webAuthHandoff = new WebAuthHandoffStore({ homeDirectory: app.getPath('home') })
   tunnels = new TunnelManager({
     identityFile: sshPairing.identityFile,
+    resolveRemoteAuth: endpoint => readRemoteWebAuthUrl(endpoint, {
+      identityFile: sshPairing.identityFile,
+      knownHostsPath: sshPairing.knownHostsPath,
+    }),
   })
   bundledDshExecutable = path.join(
     app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', 'resources'),

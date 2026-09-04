@@ -91,11 +91,11 @@ DSH Artifact Preview 是 DSH Tunnel 的配套插件，不是独立应用。DSH T
 
 需要安装到另一台设备时，优先在那台设备上打开 DSH Tunnel 并点击“安装插件”。也可以手动安装：
 
-1. 从与 DSH Tunnel 版本对应的 [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest) 下载 `dsh-plugin-artifact-preview-0.1.5.tgz`。
+1. 从与 DSH Tunnel 版本对应的 [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest) 下载 `dsh-plugin-artifact-preview-0.1.6.tgz`。
 2. 在运行目标 DSH 的设备上执行：
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.5.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.6.tgz
 ```
 
 3. 重启该设备上的 DSH。
@@ -139,6 +139,8 @@ dsh plugin --profile web remove dsh-plugin-artifact-preview
 - **本地端口**：本机浏览器访问该 DSH 时使用的端口
 
 保存后点击“连接并打开”。如果现有 SSH 密钥已经可用，客户端会直接连接；否则会显示首次配对窗口，要求核对主机指纹并输入一次目标设备账户的登录密码。配对完成后，后续连接将使用应用专用密钥，不再询问密码。
+
+DSH `0.1.2-rc.1` 及以上版本会为 WebUI 生成进程级启动 token。如果远端 DSH 也是由那台设备上的 DSH Tunnel 启动，两个客户端会通过现有 SSH 连接完成一次自动认证：启动地址只保存在当前用户可读的进程期交接文件中，DSH 停止后立即删除，不会写入主机配置或日志。若远端 DSH 由终端或其他服务启动，DSH Tunnel 无权取得其 token；首次访问时需要把该 DSH 启动输出中的地址改成本地转发端口并在浏览器中打开一次，之后即可继续使用客户端的“打开”操作。
 
 例如，本地端口为 `13080` 时，浏览器会打开：
 

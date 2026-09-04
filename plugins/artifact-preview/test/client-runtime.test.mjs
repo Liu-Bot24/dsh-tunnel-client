@@ -101,6 +101,11 @@ test('does not register any UI contribution on an unmarked local page', () => {
   assert.equal(runtime.registration, undefined)
 })
 
+test('registers on the fragment marker preserved by the RC.1 token redirect', () => {
+  const runtime = loadClient('http://127.0.0.1:13080/#dsh_tunnel_preview=web')
+  assert.ok(runtime.registration)
+})
+
 test('keeps native files on the stock opener and opens a same-origin preview URL in a new tab', () => {
   const runtime = loadClient('http://127.0.0.1:13080/?dsh_tunnel_preview=web')
   assert.equal(runtime.registration.options.priority, -100)

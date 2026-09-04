@@ -91,11 +91,11 @@ The client shows the local installation state under **Settings → Remote Artifa
 
 To install it on another device, preferably open DSH Tunnel on that device and click **Install Plugin**. You can also install it manually:
 
-1. Download `dsh-plugin-artifact-preview-0.1.5.tgz` from the matching [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest).
+1. Download `dsh-plugin-artifact-preview-0.1.6.tgz` from the matching [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest).
 2. On the device running the target DSH instance, run:
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.5.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.6.tgz
 ```
 
 3. Restart DSH on that device.
@@ -139,6 +139,8 @@ Click **Add Host** and enter:
 - **Local port**: The port used by the local browser to access this DSH instance
 
 Save the host and click **Connect and Open**. If an existing SSH key already works, the client connects immediately. Otherwise, the first-time pairing dialog asks you to verify the host fingerprint and enter the target account's login password once. Future connections use the dedicated app key without asking for the password again.
+
+DSH `0.1.2-rc.1` and newer mint a process-level startup token for the WebUI. If the remote DSH was also launched by DSH Tunnel on that host, the two clients complete the initial authentication automatically over the existing SSH connection. The startup URL exists only in a current-user, process-lifetime handoff file, is removed when DSH stops, and is never written to host settings or logs. If another terminal or service launched the remote DSH, DSH Tunnel cannot obtain or forge its token: for the first visit, replace the port in the URL printed by that DSH with the local forwarding port and open it once in the browser; later **Open** actions can reuse the browser session.
 
 For example, if the local port is `13080`, the browser opens:
 

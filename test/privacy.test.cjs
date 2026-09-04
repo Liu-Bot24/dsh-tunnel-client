@@ -66,9 +66,11 @@ test('tracked product text avoids user-home paths and email addresses', () => {
     'src/main.cjs',
     'src/core/endpoint.cjs',
     'src/core/local-dsh-manager.cjs',
+    'src/core/remote-web-auth.cjs',
     'src/core/store.cjs',
     'src/core/tray-menu.cjs',
     'src/core/tunnel-manager.cjs',
+    'src/core/web-auth.cjs',
     'src/renderer/index.html',
     'src/renderer/app.js',
     'src/renderer/user-message.js',
@@ -85,4 +87,19 @@ test('tracked product text avoids user-home paths and email addresses', () => {
     assert.doesNotMatch(contents, absoluteHomePattern, `${filename} contains an absolute user-home path`)
     assert.doesNotMatch(contents, emailPattern, `${filename} contains an email address`)
   }
+})
+
+test('DSH launch tokens stay out of renderer state and persisted endpoint settings', () => {
+  const main = read('src/main.cjs')
+  const preload = read('src/preload.cjs')
+  const renderer = read('src/renderer/app.js')
+  const endpoint = read('src/core/endpoint.cjs')
+  const tunnel = read('src/core/tunnel-manager.cjs')
+
+  assert.match(main, /tunnels\.getOpenUrl\(id\)/u)
+  assert.match(main, /localDsh\.getOpenUrl\(port\)/u)
+  assert.doesNotMatch(preload, /authUrl|token/u)
+  assert.doesNotMatch(renderer, /authUrl|token/u)
+  assert.doesNotMatch(endpoint, /authUrl|token/u)
+  assert.doesNotMatch(tunnel.match(/\n  #view\(record\) \{[\s\S]*?\n  #emit\(record\)/u)?.[0] ?? '', /authUrl|token/u)
 })

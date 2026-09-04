@@ -15,6 +15,7 @@ const {
 
 function fakeChild() {
   const child = new EventEmitter()
+  child.stdout = new EventEmitter()
   child.stderr = new EventEmitter()
   child.killCalls = []
   child.kill = (signal) => {
@@ -37,6 +38,48 @@ test('recognizes an already-running DSH without taking ownership', async () => {
   const manager = new LocalDshManager({ probe: async () => 'dsh' })
   const state = await manager.start(3080)
   assert.deepEqual(state, { state: 'running', port: 3080, owned: false, error: null })
+  await assert.rejects(() => manager.stop(), /由其他程序启动/)
+})
+
+test('captures an authenticated RC.1 startup URL without exposing it in state', async () => {
+  const token = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-token'
+  const child = fakeChild()
+  child.pid = 42
+  let probeCount = 0
+  const published = []
+  const manager = new LocalDshManager({
+    executable: '/example/dsh',
+    noOpenSupported: true,
+    probe: async () => child.killCalls.length > 0 ? 'free' : (probeCount++ === 0 ? 'free' : 'dsh-auth'),
+    authHandoff: {
+      clear: async () => {},
+      publish: async (...values) => published.push(values),
+      remove: async () => {},
+    },
+    spawnProcess: () => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', Buffer.from(`dsh web: http://127.0.0.1:3080/?token=${token}\n`))
+      })
+      return child
+    },
+    terminateProcess: async value => value.kill(),
+    pollInterval: 1,
+  })
+
+  const state = await manager.start(3080)
+  assert.equal(state.state, 'running')
+  assert.doesNotMatch(JSON.stringify(state), /token/u)
+  assert.equal(new URL(manager.getOpenUrl(3080)).searchParams.get('token'), token)
+  assert.equal(published.length, 1)
+  assert.equal(published[0][0], 3080)
+  await manager.stop()
+})
+
+test('recognizes an authenticated DSH owned by another process without taking ownership', async () => {
+  const manager = new LocalDshManager({ probe: async () => 'dsh-auth' })
+  const state = await manager.start(3080)
+  assert.deepEqual(state, { state: 'running', port: 3080, owned: false, error: null })
+  assert.equal(manager.getOpenUrl(3080), 'http://127.0.0.1:3080/')
   await assert.rejects(() => manager.stop(), /由其他程序启动/)
 })
 

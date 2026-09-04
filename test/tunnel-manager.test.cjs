@@ -1,7 +1,8 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { EventEmitter } = require('node:events')
-const { TunnelManager, tunnelExitMessage } = require('../src/core/tunnel-manager.cjs')
+const { TunnelManager, tunnelExitMessage, waitForHttp } = require('../src/core/tunnel-manager.cjs')
+const { DSH_AUTH_REQUIRED_BODY } = require('../src/core/web-auth.cjs')
 
 function fakeChild() {
   const child = new EventEmitter()
@@ -29,6 +30,19 @@ function deferred() {
 
 const endpoint = { id: 'one', name: 'One', sshHost: 'one', localPort: 13080, remotePort: 3080 }
 
+test('treats the exact RC.1 authentication response as a ready DSH listener', async () => {
+  const result = await waitForHttp('http://127.0.0.1:13080/', {
+    fetchImpl: async () => ({
+      ok: false,
+      status: 401,
+      text: async () => DSH_AUTH_REQUIRED_BODY,
+    }),
+    timeoutMs: 20,
+    intervalMs: 1,
+  })
+  assert.deepEqual(result, { authRequired: true })
+})
+
 test('reports connected after the DSH readiness probe succeeds', async () => {
   const child = fakeChild()
   const manager = new TunnelManager({
@@ -39,8 +53,47 @@ test('reports connected after the DSH readiness probe succeeds', async () => {
   const state = await manager.start(endpoint)
   assert.equal(state.state, 'connected')
   assert.equal(state.url, 'http://127.0.0.1:13080/?dsh_tunnel_preview=web')
+  assert.equal(manager.getOpenUrl('one'), state.url)
   await manager.stop('one')
   assert.equal(manager.get('one').state, 'stopped')
+})
+
+test('keeps a remote launch token private while using it for the forwarded browser URL', async () => {
+  const token = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-token'
+  const child = fakeChild()
+  const manager = new TunnelManager({
+    spawnImpl: () => child,
+    waitForReady: async () => ({ authRequired: true }),
+    resolveRemoteAuth: async () => `http://127.0.0.1:3080/?token=${token}`,
+    assertPortAvailable: async () => {},
+  })
+
+  const state = await manager.start(endpoint)
+  assert.equal(state.authRequired, true)
+  assert.equal(state.authAvailable, true)
+  assert.doesNotMatch(JSON.stringify(state), /token/u)
+  const openUrl = new URL(manager.getOpenUrl(endpoint.id))
+  assert.equal(openUrl.origin, 'http://127.0.0.1:13080')
+  assert.equal(openUrl.searchParams.get('token'), token)
+  assert.equal(new URLSearchParams(openUrl.hash.slice(1)).get('dsh_tunnel_preview'), 'web')
+  await manager.stop(endpoint.id)
+  assert.throws(() => manager.getOpenUrl(endpoint.id), /请先连接/u)
+})
+
+test('keeps the tunnel usable when RC.1 needs auth but the remote handoff is unavailable', async () => {
+  const child = fakeChild()
+  const manager = new TunnelManager({
+    spawnImpl: () => child,
+    waitForReady: async () => ({ authRequired: true }),
+    resolveRemoteAuth: async () => null,
+    assertPortAvailable: async () => {},
+  })
+
+  const state = await manager.start(endpoint)
+  assert.equal(state.authRequired, true)
+  assert.equal(state.authAvailable, false)
+  assert.equal(manager.getOpenUrl(endpoint.id), state.url)
+  await manager.stop(endpoint.id)
 })
 
 test('kills the SSH process when readiness fails', async () => {

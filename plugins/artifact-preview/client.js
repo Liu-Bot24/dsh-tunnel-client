@@ -68,7 +68,9 @@ window.__ModuleLoader__.load({
 
     function isTunnelPreviewPage() {
       try {
-        return new URL(window.location.href).searchParams.get(MARKER) === MARKER_VALUE
+        const url = new URL(window.location.href)
+        return url.searchParams.get(MARKER) === MARKER_VALUE
+          || new URLSearchParams(url.hash.slice(1)).get(MARKER) === MARKER_VALUE
       } catch {
         return false
       }
