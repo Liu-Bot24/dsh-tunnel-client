@@ -7,7 +7,7 @@ const TOKEN = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-token'
 const endpoint = { id: 'remote', mode: 'ssh', name: 'Remote', sshHost: 'remote-alias', sshUser: 'tester', sshPort: 22, remotePort: 3080, localPort: 13080 }
 const url = `http://127.0.0.1:3080/?token=${TOKEN}`
 
-function fixture(body, { code = 0, hanging = false, exists = false } = {}) {
+function fixture(body, { code = 0, hanging = false, exists = false, responses } = {}) {
   const calls = []
   let killed = false
   return { calls, get killed() { return killed },
@@ -20,9 +20,10 @@ function fixture(body, { code = 0, hanging = false, exists = false } = {}) {
         child.kill = () => { killed = true }
         child.stdin = { end(script) {
           calls.push({ command, args, options, script })
+          const response = responses?.[calls.length - 1] ?? { body, code }
           if (!hanging) queueMicrotask(() => {
-            child.stdout.emit('data', body)
-            child.emit('close', code)
+            child.stdout.emit('data', response.body)
+            child.emit('close', response.code)
           })
         } }
         return child
@@ -30,6 +31,30 @@ function fixture(body, { code = 0, hanging = false, exists = false } = {}) {
     },
   }
 }
+
+test('finds Homebrew Node when a noninteractive Mac SSH PATH has no node', async () => {
+  const f = fixture('', { responses: [{ body: '', code: 127 }, { body: JSON.stringify({ version: 1, port: 3080, url }), code: 0 }] })
+  assert.equal(await readRemoteWebAuthUrl(endpoint, f.options), url)
+  assert.deepEqual(f.calls.map(call => call.args.at(-2)), ['node', '/opt/homebrew/bin/node'])
+})
+
+test('does not try another runtime after an actual reader or SSH failure', async () => {
+  const f = fixture('', { responses: [{ body: '', code: 1 }, { body: JSON.stringify({ version: 1, port: 3080, url }), code: 0 }] })
+  await assert.rejects(readRemoteWebAuthUrl(endpoint, f.options), /无法读取远端/)
+  assert.equal(f.calls.length, 1)
+})
+
+test('tries the Intel Mac Node location and bounds missing-runtime attempts', async () => {
+  const f = fixture('', { responses: [{ body: '', code: 127 }, { body: '', code: 127 }, { body: JSON.stringify({ version: 1, port: 3080, url }), code: 0 }] })
+  assert.equal(await readRemoteWebAuthUrl(endpoint, f.options), url)
+  assert.equal(f.calls[2].args.at(-2), '/usr/local/bin/node')
+  const absent = fixture('', { code: 127 })
+  await assert.rejects(readRemoteWebAuthUrl(endpoint, absent.options), /无法读取远端/)
+  assert.equal(absent.calls.length, 3)
+  const partial = fixture('partial output', { code: 127 })
+  await assert.rejects(readRemoteWebAuthUrl(endpoint, partial.options), /无法读取远端/)
+  assert.equal(partial.calls.length, 1)
+})
 
 test('uses the configured OpenSSH identity when no application-specific key exists', async () => {
   const f = fixture(JSON.stringify({ version: 1, port: 3080, url }))
