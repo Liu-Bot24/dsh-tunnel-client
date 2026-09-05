@@ -1,129 +1,79 @@
 const fs = require('node:fs')
-const { Client } = require('ssh2')
+const { spawn } = require('node:child_process')
 const { normalizeEndpoint } = require('./endpoint.cjs')
-const {
-  knownHostsContains,
-  normalizedSshHost,
-  resolveSshEndpoint,
-} = require('./ssh-pairing.cjs')
-const {
-  HANDOFF_VERSION,
-  authenticatedWebUrl,
-  remoteHandoffPath,
-} = require('./web-auth.cjs')
+const { sshTarget } = require('./ssh.cjs')
+const { HANDOFF_VERSION, authenticatedWebUrl } = require('./web-auth.cjs')
 
 const MAX_HANDOFF_BYTES = 4_096
 
-function readSftpText(sftp, filename, maximum = MAX_HANDOFF_BYTES) {
-  return new Promise((resolve, reject) => {
-    let settled = false
-    let body = ''
-    const finish = (error, value) => {
-      if (settled) return
-      settled = true
-      if (error) reject(error)
-      else resolve(value)
-    }
-    const stream = sftp.createReadStream(filename, { encoding: 'utf8' })
-    stream.on('data', (chunk) => {
-      body += String(chunk)
-      if (Buffer.byteLength(body) > maximum) {
-        stream.destroy(new Error('远端 DSH 认证信息过大'))
-      }
-    })
-    stream.once('error', (error) => {
-      if (error?.code === 2 || error?.code === 'ENOENT' || /no such file/iu.test(error?.message ?? '')) {
-        finish(null, null)
-      } else {
-        finish(error)
-      }
-    })
-    stream.once('end', () => finish(null, body))
-  })
-}
-
-function sftpCall(sftp, method, ...args) {
-  return new Promise((resolve, reject) => {
-    sftp[method](...args, (error, value) => {
-      if (error) reject(error)
-      else resolve(value)
-    })
-  })
-}
-
-async function readRemoteWebAuthUrl(input, {
+// Use the same OpenSSH authentication/configuration as the forwarding process.
+// A fixed `node -` command works on both host platforms; the small read script
+// travels over stdin, and the launch URL stays only in bounded process memory.
+function readRemoteWebAuthUrl(input, {
   identityFile,
   knownHostsPath,
-  ClientCtor = Client,
+  spawnProcess = spawn,
   fsImpl = fs,
-  resolve = resolveSshEndpoint,
   timeoutMs = 10_000,
 } = {}) {
-  if (!identityFile || !knownHostsPath) return null
   const endpoint = normalizeEndpoint(input)
-  let privateKey
-  let knownHosts
-  try {
-    [privateKey, knownHosts] = await Promise.all([
-      fsImpl.promises.readFile(identityFile),
-      fsImpl.promises.readFile(knownHostsPath, 'utf8'),
-    ])
-  } catch (error) {
-    if (error?.code === 'ENOENT') return null
-    throw new Error('无法读取 SSH 认证信息')
-  }
-
-  const resolved = await resolve(endpoint)
-  const host = normalizedSshHost(resolved.sshHost)
-  const port = resolved.sshPort ?? 22
-  return new Promise((resolvePromise, rejectPromise) => {
-    const client = new ClientCtor()
+  const args = ['-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=10']
+  if (identityFile && fsImpl.existsSync(identityFile)) args.push('-i', identityFile)
+  if (knownHostsPath) args.push('-o', `UserKnownHostsFile=${knownHostsPath}`)
+  if (endpoint.sshPort !== null) args.push('-p', String(endpoint.sshPort))
+  args.push(sshTarget(endpoint), 'node', '-')
+  const script = `const fs = require('node:fs');
+const path = require('node:path');
+const filename = path.join(require('node:os').homedir(), '.dsh-tunnel', 'web-auth-${endpoint.remotePort}.json');
+try {
+  const info = fs.lstatSync(filename);
+  if (!info.isFile() || info.size > ${MAX_HANDOFF_BYTES}) process.exit(2);
+  process.stdout.write(fs.readFileSync(filename));
+} catch (error) { process.exit(error.code === 'ENOENT' ? 0 : 1); }
+`
+  return new Promise((resolve, reject) => {
+    let child
     let settled = false
+    let body = ''
     const finish = (error, value = null) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      try { client.end() } catch {}
-      if (error) rejectPromise(new Error('无法读取远端 DSH 认证信息'))
-      else resolvePromise(value)
+      if (error) {
+        child?.kill()
+        reject(new Error('无法读取远端 DSH 认证信息'))
+      } else resolve(value)
     }
     const timer = setTimeout(() => finish(new Error('timeout')), timeoutMs)
-    client.once('error', finish)
-    client.once('ready', () => {
-      client.sftp(async (error, sftp) => {
-        if (error) return finish(error)
+    try {
+      child = spawnProcess('ssh', args, { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+      child.once('error', finish)
+      child.stdin.on?.('error', finish)
+      child.stdout.on('data', chunk => {
+        if (settled) return
+        if (Buffer.byteLength(body) + Buffer.byteLength(chunk) > MAX_HANDOFF_BYTES) {
+          finish(new Error('oversized handoff'))
+          return
+        }
+        body += String(chunk)
+      })
+      // Drain diagnostics without retaining or exposing authentication details.
+      child.stderr.resume()
+      child.once('close', code => {
+        if (settled) return
+        if (code !== 0) return finish(new Error('ssh failed'))
+        if (!body.trim()) return finish(null)
         try {
-          const home = await sftpCall(sftp, 'realpath', '.')
-          const body = await readSftpText(sftp, remoteHandoffPath(home, endpoint.remotePort))
-          if (body === null) return finish(null, null)
           const parsed = JSON.parse(body)
-          const url = parsed?.version === HANDOFF_VERSION
-            && parsed?.port === endpoint.remotePort
+          const url = parsed?.version === HANDOFF_VERSION && parsed?.port === endpoint.remotePort
             ? authenticatedWebUrl(parsed.url, endpoint.remotePort)
             : null
           finish(null, url)
-        } catch (readError) {
-          finish(readError)
-        }
+        } catch { finish(new Error('invalid handoff')) }
       })
-    })
-    try {
-      client.connect({
-        host,
-        port,
-        username: resolved.sshUser,
-        privateKey,
-        readyTimeout: timeoutMs,
-        hostVerifier: key => knownHostsContains(knownHosts, host, port, Buffer.from(key)),
-      })
-    } catch (error) {
-      finish(error)
-    }
+      child.stdin.end(script)
+    } catch (error) { finish(error) }
   })
 }
 
-module.exports = {
-  MAX_HANDOFF_BYTES,
-  readRemoteWebAuthUrl,
-  readSftpText,
-}
+module.exports = { MAX_HANDOFF_BYTES, readRemoteWebAuthUrl }
