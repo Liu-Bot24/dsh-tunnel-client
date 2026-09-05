@@ -18,6 +18,7 @@ test('automatic runtime always uses the bundled npx launcher and probes its reso
   const runtime = resolveDshRuntime({
     bundledExecutable: '/app/dsh-runner/dsh',
     environment,
+    platform: 'darwin',
     versionResolver: (executable, options) => {
       received = { executable, environment: options.environment }
       return '0.1.0-rc.7'
@@ -34,7 +35,7 @@ test('automatic runtime always uses the bundled npx launcher and probes its reso
   assert.deepEqual(received, {
     executable: '/app/dsh-runner/dsh',
     environment: {
-      PATH: ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'].join(path.delimiter),
+      PATH: ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'].join(path.posix.delimiter),
     },
   })
 })
@@ -48,7 +49,7 @@ test('custom runtime parses quoted paths and preserves command arguments without
   })
   assert.equal(runtime.executable, '/Applications/Custom DSH/bin/dsh')
   assert.deepEqual(runtime.commandArgs, ['--profile', 'private'])
-  assert.equal(runtime.environment.PATH.split(path.delimiter)[0], '/opt/homebrew/bin')
+  assert.equal(runtime.environment.PATH.split(path.posix.delimiter)[0], '/opt/homebrew/bin')
 })
 
 test('custom NPX runtime resolves common GUI paths and probes the selected package', () => {
