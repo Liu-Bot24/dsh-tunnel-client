@@ -2,6 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const { normalizeEndpoint } = require('./endpoint.cjs')
+const { DEFAULT_DSH_LAUNCH_COMMAND, normalizeDshLaunchCommand } = require('./dsh-runtime.cjs')
 
 const SUPPORTED_THEMES = Object.freeze([
   'whale-song',
@@ -135,7 +136,10 @@ function normalizeSettings(input) {
   }
   const theme = input.theme ?? DEFAULT_THEME
   if (!SUPPORTED_THEMES.includes(theme)) throw new Error('这个主题不可用')
-  return { theme }
+  const dshLaunchCommand = normalizeDshLaunchCommand(
+    input.dshLaunchCommand ?? DEFAULT_DSH_LAUNCH_COMMAND,
+  )
+  return { theme, dshLaunchCommand }
 }
 
 function writeJson(filename, value, fileSystem = fs) {
@@ -164,6 +168,7 @@ function assertUnique(endpoints, { requireLocal = false } = {}) {
 }
 
 module.exports = {
+  DEFAULT_DSH_LAUNCH_COMMAND,
   DEFAULT_THEME,
   EndpointStore,
   SettingsStore,

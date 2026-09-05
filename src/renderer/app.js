@@ -26,6 +26,8 @@ const pairingDialog = document.querySelector('#pairing-dialog')
 const pairingForm = document.querySelector('#pairing-form')
 const settingsDialog = document.querySelector('#settings-dialog')
 const settingsForm = document.querySelector('#settings-form')
+const launchCommandField = document.querySelector('#dsh-launch-command')
+const DEFAULT_DSH_LAUNCH_COMMAND = 'npx --yes @deepseek-ai/dsh'
 const pluginFields = {
   version: document.querySelector('#plugin-version'),
   status: document.querySelector('#plugin-status'),
@@ -80,7 +82,7 @@ const pairingFields = {
 
 let endpoints = []
 let selectedEndpointId = null
-let settings = { theme: 'whale-song' }
+let settings = { theme: 'whale-song', dshLaunchCommand: DEFAULT_DSH_LAUNCH_COMMAND }
 let settingsCommitted = false
 let companionPluginState = null
 let companionPluginBusy = false
@@ -428,6 +430,7 @@ function openSettings() {
   settingsCommitted = false
   const selected = settingsForm.querySelector(`input[name="theme"][value="${settings.theme}"]`)
   if (selected) selected.checked = true
+  launchCommandField.value = settings.dshLaunchCommand ?? DEFAULT_DSH_LAUNCH_COMMAND
   applyTheme(settings.theme)
   companionPluginState = null
   renderCompanionPlugin()
@@ -487,6 +490,10 @@ document.querySelector('#close-pairing').addEventListener('click', closePairing)
 document.querySelector('#cancel-pairing').addEventListener('click', closePairing)
 document.querySelector('#close-settings').addEventListener('click', cancelSettings)
 document.querySelector('#cancel-settings').addEventListener('click', cancelSettings)
+document.querySelector('#reset-launch-command').addEventListener('click', () => {
+  launchCommandField.value = DEFAULT_DSH_LAUNCH_COMMAND
+  launchCommandField.focus()
+})
 pluginFields.install.addEventListener('click', async () => {
   companionPluginBusy = 'install'
   renderCompanionPlugin()
@@ -619,7 +626,10 @@ settingsForm.addEventListener('submit', async (event) => {
   const selected = settingsForm.querySelector('input[name="theme"]:checked')
   if (!selected) return
   try {
-    settings = await window.dshTunnel.saveSettings({ theme: selected.value })
+    settings = await window.dshTunnel.saveSettings({
+      theme: selected.value,
+      dshLaunchCommand: launchCommandField.value,
+    })
     settingsCommitted = true
     applyTheme(settings.theme)
     settingsDialog.close()

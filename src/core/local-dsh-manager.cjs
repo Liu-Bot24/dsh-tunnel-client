@@ -42,6 +42,7 @@ class LocalDshManager extends EventEmitter {
     noOpenSupported = null,
     platform = process.platform,
     authHandoff = null,
+    commandArgs = [],
   } = {}) {
     super()
     this.spawnProcess = spawnProcess
@@ -56,6 +57,7 @@ class LocalDshManager extends EventEmitter {
     this.resolveVersion = resolveVersion
     this.platform = platform
     this.authHandoff = authHandoff
+    this.commandArgs = Object.freeze([...commandArgs])
     this.noOpenSupported = typeof noOpenSupported === 'boolean' ? noOpenSupported : null
     this.child = null
     this.startPromise = null
@@ -140,7 +142,7 @@ class LocalDshManager extends EventEmitter {
     this.setState({ state: 'starting', port, owned: false, error: null })
     let child
     try {
-      const args = ['web', '--port', String(port)]
+      const args = [...this.commandArgs, 'web', '--port', String(port)]
       if (this.#supportsNoOpen()) args.push('--no-open')
       child = this.spawnProcess(this.executable, args, {
         cwd: this.cwd,
@@ -211,7 +213,7 @@ class LocalDshManager extends EventEmitter {
     if (this.noOpenSupported !== null) return this.noOpenSupported
     let version = null
     try {
-      version = this.resolveVersion(this.executable)
+      version = this.resolveVersion(this.executable, { commandArgs: this.commandArgs })
     } catch {}
     this.noOpenSupported = supportsNoOpen(version)
     return this.noOpenSupported
@@ -372,6 +374,7 @@ function translateStartupFailure(stderr) {
 }
 
 function resolveDshVersion(executable, {
+  commandArgs = [],
   spawnSyncProcess = spawnSync,
   environment = process.env,
   timeout = 5_000,
@@ -389,7 +392,7 @@ function resolveDshVersion(executable, {
       ...pathEntries.filter((entry) => entry !== executableDirectory),
     ].join(path.delimiter)
   }
-  const result = spawnSyncProcess(executable, ['--version'], {
+  const result = spawnSyncProcess(executable, [...commandArgs, '--version'], {
     shell: false,
     windowsHide: true,
     encoding: 'utf8',

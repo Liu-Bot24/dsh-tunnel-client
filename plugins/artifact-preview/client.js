@@ -66,6 +66,17 @@ window.__ModuleLoader__.load({
     const PREVIEW_REQUEST = 'dsh_artifact_preview'
     const ARTIFACT_CSP = "default-src 'none'; base-uri 'none'; connect-src 'none'; img-src data: blob:; media-src data: blob:; font-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'none'; frame-src 'none'; child-src 'none'; object-src 'none'; worker-src 'none'"
 
+    // This surface opens individual files through the preview route, never a host
+    // folder. Supply that policy to both generations of the upstream component;
+    // neither a removed Connection store nor a host capability query is needed.
+    const PREVIEW_HOST_DESCRIPTION = Object.freeze({ canOpenPath: false })
+    const PREVIEW_ONLY_CAPABILITIES = Object.freeze({
+      isLoopback: false,
+      useHostDescription: select => select(PREVIEW_HOST_DESCRIPTION),
+      ensureWorkspacePathOpen: () => {},
+      useWorkspacePathOpen: select => select(false),
+    })
+
     function isTunnelPreviewPage() {
       try {
         const url = new URL(window.location.href)
@@ -293,7 +304,7 @@ window.__ModuleLoader__.load({
       if (!isTunnelPreviewPage()) return
       const connection = ctx.get('connection')
       const fileMentions = ctx.get('chatFileMentions')
-      let activeSessionId = null
+      const sessionIdsByTurn = new WeakMap()
       const request = requestedPreview()
       if (request) {
         renderPreviewPage(connection, request)
@@ -301,9 +312,11 @@ window.__ModuleLoader__.load({
       }
 
       function TunnelProducedFiles(props) {
-        activeSessionId = props.sessionId
+        if (props.turn && typeof props.turn === 'object') {
+          sessionIdsByTurn.set(props.turn, props.sessionId)
+        }
         const openFile = producedPath => openProducedPath(producedPath, props.openFile, props.sessionId)
-        return h(ProducedFiles, { ...props, openFile, isLoopback: false })
+        return h(ProducedFiles, { ...props, ...PREVIEW_ONLY_CAPABILITIES, openFile })
       }
 
       ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
@@ -311,10 +324,6 @@ window.__ModuleLoader__.load({
         priority: -100,
         select: selectProduced,
         locale: 'deliverables',
-        inject: () => ({
-          isLoopback: false,
-          hooks: { hostDescription: connection.hostDescription },
-        }),
       }, TunnelProducedFiles))
 
       const nativeForClosing = fileMentions.forClosing.bind(fileMentions)
@@ -322,7 +331,7 @@ window.__ModuleLoader__.load({
         const paths = selectProduced(owner)
         if (paths === null) return nativeForClosing(owner)
         return mentionResolver(paths, producedPath => {
-          openProducedPath(producedPath, owner.openFile, activeSessionId)
+          openProducedPath(producedPath, owner.openFile, sessionIdsByTurn.get(owner.turn))
         })
       }
       fileMentions.forClosing = remoteForClosing

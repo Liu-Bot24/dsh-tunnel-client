@@ -111,7 +111,7 @@ dsh plugin --profile web remove dsh-plugin-artifact-preview
 ## 使用要求
 
 - 系统中存在可用的 OpenSSH 客户端
-- 如需由客户端启动本机 DSH，`dsh` 命令必须已安装并可运行
+- 如需使用默认启动命令，系统需安装 Node.js 并提供 `npx`；使用自定义命令时，该命令必须在当前设备上可运行
 - 远程主机已启用 SSH，并允许使用现有密钥登录，或在首次配对时使用该账户的登录密码
 - 远程 DSH 可从该主机自身的 `127.0.0.1:<端口>` 访问
 
@@ -126,6 +126,8 @@ dsh plugin --profile web remove dsh-plugin-artifact-preview
 3. DSH Tunnel 启动 DSH，并在服务就绪后打开 WebUI。
 
 默认端口为 `3080`。可以通过“编辑”修改显示名称和启动端口；新的端口会在下次启动时生效。客户端只会停止由自身启动的 DSH，不会终止由其他程序启动的实例。
+
+“设置 → 本机 DSH 启动命令”默认填写 `npx --yes @deepseek-ai/dsh`。客户端会自动追加 `web`、本机端口，并在当前 DSH 版本支持时追加 `--no-open`。用户可以改成 `dsh`、指定版本的 NPX 命令或绝对可执行文件路径；修改前需要停止本机 DSH。启动命令只保存在当前设备，请勿在其中填写密码或 token。
 
 ## 连接远程 DSH
 

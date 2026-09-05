@@ -13,7 +13,7 @@
 优先使用 DSH Tunnel 客户端“设置 → 远程产物预览插件”中的安装入口。需要安装到另一台设备时，从 DSH Tunnel Release 下载插件包，在运行目标 DSH 的设备上执行：
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.6.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.7.tgz
 ```
 
 重启 DSH 后生效。卸载时运行：

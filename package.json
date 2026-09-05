@@ -39,8 +39,8 @@
         "to": "dsh-runner"
       },
       {
-        "from": "resources/plugins/dsh-plugin-artifact-preview-0.1.6.tgz",
-        "to": "plugins/dsh-plugin-artifact-preview-0.1.6.tgz"
+        "from": "resources/plugins/dsh-plugin-artifact-preview-0.1.7.tgz",
+        "to": "plugins/dsh-plugin-artifact-preview-0.1.7.tgz"
       },
       {
         "from": "resources/plugin-tools",
@@ -84,6 +84,7 @@
   "dependencies": {
     "cross-spawn": "7.0.6",
     "pnpm": "11.19.0",
-    "ssh2": "1.17.0"
+    "ssh2": "1.17.0",
+    "tar": "7.5.22"
   }
 }

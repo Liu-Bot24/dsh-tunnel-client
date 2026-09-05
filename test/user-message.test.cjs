@@ -32,6 +32,9 @@ test('covers actual local DSH and port errors with and without an IPC wrapper', 
     '请先断开连接，再修改连接设置',
     'DSH 下载失败，请检查网络连接',
     '未找到 npx，请先安装 Node.js',
+    '请先停止本机 DSH，再修改启动命令',
+    'DSH 启动命令的引号没有闭合',
+    '配套插件安装包格式不正确',
   ]
   for (const message of messages) {
     assert.equal(userMessage(new Error(message)), message)

@@ -178,6 +178,32 @@ test('starts DSH rc.8 and newer with no-open and no shell', async () => {
   assert.equal(child.killCalls.length, 1)
 })
 
+test('prepends a custom command body before managed WebUI arguments', async () => {
+  const calls = []
+  const child = fakeChild()
+  let probeCount = 0
+  const manager = new LocalDshManager({
+    executable: '/opt/homebrew/bin/npx',
+    commandArgs: ['--yes', '@deepseek-ai/dsh@0.1.2-rc.1'],
+    noOpenSupported: true,
+    probe: async () => child.killCalls.length > 0 ? 'free' : (probeCount++ === 0 ? 'free' : 'dsh'),
+    spawnProcess: (command, args, options) => {
+      calls.push({ command, args, options })
+      return child
+    },
+    pollInterval: 1,
+  })
+
+  await manager.start(3080)
+  assert.equal(calls[0].command, '/opt/homebrew/bin/npx')
+  assert.deepEqual(calls[0].args, [
+    '--yes', '@deepseek-ai/dsh@0.1.2-rc.1',
+    'web', '--port', '3080', '--no-open',
+  ])
+  assert.equal(calls[0].options.shell, false)
+  await manager.stop()
+})
+
 test('keeps the legacy launch arguments for DSH rc.7', async () => {
   const calls = []
   const child = fakeChild()
@@ -339,8 +365,10 @@ test('version probing lets an absolute env-based DSH script find its adjacent No
   const delimiter = require('node:path').delimiter
   let receivedOptions = null
   const version = resolveDshVersion('/opt/homebrew/bin/dsh', {
+    commandArgs: ['--yes', '@deepseek-ai/dsh@next'],
     environment: { PATH: ['/usr/bin', '/bin'].join(delimiter), KEEP: 'yes' },
-    spawnSyncProcess: (_executable, _args, options) => {
+    spawnSyncProcess: (_executable, args, options) => {
+      assert.deepEqual(args, ['--yes', '@deepseek-ai/dsh@next', '--version'])
       receivedOptions = options
       return { status: 0, stdout: '0.1.1-rc.2\n' }
     },

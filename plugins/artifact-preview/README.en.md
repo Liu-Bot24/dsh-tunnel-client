@@ -13,7 +13,7 @@ The plugin reuses DSH's existing Produced row and artifact mentions in the closi
 Prefer the install action under **DSH Tunnel → Settings → Remote Artifact Preview Plugin**. To install it on another device, download the plugin package from the DSH Tunnel Release and run this command on the device that hosts the target DSH instance:
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.6.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.7.tgz
 ```
 
 Restart DSH after installation. To uninstall:

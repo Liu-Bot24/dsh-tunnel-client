@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-artifact-preview",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Safely preview remote DSH HTML, SVG, and image deliverables in the controlling browser.",
   "type": "module",
   "main": "./index.js",

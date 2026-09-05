@@ -164,7 +164,15 @@ test('desktop packages bundle the plugin installer runtime instead of relying on
   assert.match(windowsWrapper, /DSH_TUNNEL_PNPM_PATH/)
 })
 
-test('desktop packages use the official npx entry as one automatic DSH path', () => {
+test('desktop packages include the trusted archive extractor used for isolated plugin updates', () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'))
+  const macPackager = fs.readFileSync(path.join(projectRoot, 'scripts/package-mac.mjs'), 'utf8')
+  assert.equal(packageJson.dependencies.tar, '7.5.22')
+  assert.match(macPackager, /\^\\\/dist\(\$\|\\\/\)/)
+  assert.doesNotMatch(macPackager, /\(\^\|\\\/\)dist/)
+})
+
+test('desktop packages keep the official npx entry as the default and expose a custom command setting', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'))
   const macPackager = fs.readFileSync(path.join(projectRoot, 'scripts/package-mac.mjs'), 'utf8')
   const macRunner = fs.readFileSync(path.join(projectRoot, 'resources/dsh-runner/dsh'), 'utf8')
@@ -185,14 +193,17 @@ test('desktop packages use the official npx entry as one automatic DSH path', ()
   assert.match(mainProcess, /resolveVersion: runtime\.resolveVersion/)
   assert.match(mainProcess, /noOpenSupported: runtime\.noOpenSupported/)
   assert.match(mainProcess, /startupTimeout: runtime\.startupTimeout/)
-  assert.match(mainProcess, /commandEnvironment\(runtime\.environmentExecutable, process\.env/)
+  assert.match(mainProcess, /commandEnvironment\(runtime\.environmentExecutable, runtime\.environment/)
+  assert.match(mainProcess, /launchCommand: settings\.dshLaunchCommand/)
+  assert.match(renderer, /DEFAULT_DSH_LAUNCH_COMMAND = 'npx --yes @deepseek-ai\/dsh'/)
+  assert.match(html, /id="dsh-launch-command"[\s\S]*value="npx --yes @deepseek-ai\/dsh"/)
   assert.match(mainProcess, /configureDshServices/)
   assert.match(mainProcess, /runLocalDshOperation/)
   assert.match(mainProcess, /dshHome: process\.env\.DSH_HOME/)
   assert.match(mainProcess, /local-dsh:start[\s\S]*runLocalDshOperation\(startLocalDsh\)/)
   assert.match(mainProcess, /local-dsh:stop[\s\S]*return localDsh\.stop\(\)/)
   assert.doesNotMatch(mainProcess, /dsh-runtime:status|inspectInstalledDshRuntime/)
-  assert.doesNotMatch(renderer, /dshRuntime|getDshRuntimeStatus|dsh-runtime/)
+  assert.doesNotMatch(renderer, /getDshRuntimeStatus|dsh-runtime/)
   assert.doesNotMatch(html, /DSH 运行方式|name="dsh-runtime"/)
 })
 

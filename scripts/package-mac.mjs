@@ -34,13 +34,13 @@ const outputPaths = await packager({
   overwrite: true,
   prune: true,
   ignore: [
-    /(^|\/)dist($|\/)/,
-    /(^|\/)test($|\/)/,
-    /(^|\/)scripts($|\/)/,
-    /(^|\/)resources($|\/)/,
-    /(^|\/)DEVELOPMENT_LOG\.md$/,
-    /(^|\/)\.gitignore$/,
-    /(^|\/)README\.md$/,
+    /^\/dist($|\/)/,
+    /^\/test($|\/)/,
+    /^\/scripts($|\/)/,
+    /^\/resources($|\/)/,
+    /^\/DEVELOPMENT_LOG\.md$/,
+    /^\/\.gitignore$/,
+    /^\/README\.md$/,
   ],
 })
 

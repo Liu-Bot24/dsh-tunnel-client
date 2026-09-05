@@ -225,6 +225,22 @@
             <span><strong>柔雾器物</strong><small>浅色陶瓷质感</small></span>
           </label>
         </fieldset>
+        <section class="launch-settings" aria-labelledby="launch-settings-title">
+          <div class="launch-settings-heading">
+            <div>
+              <h3 id="launch-settings-title">本机 DSH 启动命令</h3>
+              <p>新安装默认使用官方 NPX 命令。也可以改成全局 DSH、指定版本或其他习惯的启动方式。</p>
+            </div>
+          </div>
+          <label for="dsh-launch-command">
+            命令主体
+            <input id="dsh-launch-command" name="dsh-launch-command" type="text" autocomplete="off" spellcheck="false" value="npx --yes @deepseek-ai/dsh">
+            <small class="field-note">客户端会自动追加 <code>web</code>、本机端口，并在版本支持时追加 <code>--no-open</code>。不要在命令中填写密码或 Token。</small>
+          </label>
+          <div class="launch-actions">
+            <button id="reset-launch-command" class="button secondary" type="button">恢复默认命令</button>
+          </div>
+        </section>
         <section class="plugin-settings" aria-labelledby="plugin-settings-title">
           <div class="plugin-settings-heading">
             <div>

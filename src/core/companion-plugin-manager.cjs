@@ -1,9 +1,11 @@
 const fs = require('node:fs')
 const path = require('node:path')
+const { randomUUID } = require('node:crypto')
+const tar = require('tar')
 const spawn = process.platform === 'win32' ? require('cross-spawn') : require('node:child_process').spawn
 
 const PLUGIN_NAME = 'dsh-plugin-artifact-preview'
-const PLUGIN_VERSION = '0.1.6'
+const PLUGIN_VERSION = '0.1.7'
 const PLUGIN_ARCHIVE = `${PLUGIN_NAME}-${PLUGIN_VERSION}.tgz`
 
 class CompanionPluginManager {
@@ -11,6 +13,7 @@ class CompanionPluginManager {
     homeDirectory,
     dshHome,
     dshExecutable = 'dsh',
+    dshArguments = [],
     nodeExecutable = process.execPath,
     packagePath,
     toolDirectory,
@@ -21,10 +24,13 @@ class CompanionPluginManager {
     writeFile = fs.promises.writeFile,
     access = fs.promises.access,
     installTimeout = 120_000,
+    installArchive = installBundledArchive,
+    removePlugin = removeInstalledPlugin,
   }) {
     this.homeDirectory = homeDirectory
     this.dshHome = dshHome
     this.dshExecutable = dshExecutable
+    this.dshArguments = Object.freeze([...dshArguments])
     this.nodeExecutable = nodeExecutable
     this.packagePath = packagePath
     this.toolDirectory = toolDirectory
@@ -35,6 +41,8 @@ class CompanionPluginManager {
     this.writeFile = writeFile
     this.access = access
     this.installTimeout = installTimeout
+    this.installArchive = installArchive
+    this.removePlugin = removePlugin
   }
 
   getPackagePath() {
@@ -77,35 +85,24 @@ class CompanionPluginManager {
     if (before.state === 'installed' || before.state === 'newer') return before
 
     if (before.installedVersion && compareVersions(before.installedVersion, PLUGIN_VERSION) >= 0) {
+      await this.#pointManifestAtBundledPackage()
       await this.#setBundleEnabled(true)
       return this.inspect({ state: 'stopped' })
     }
 
     await this.#ensureProfile()
     await this.#pointManifestAtBundledPackage()
-    let installError = null
-    try {
-      await runPluginInstall({
-        executable: this.dshExecutable,
-        nodeExecutable: this.nodeExecutable,
-        packagePath: this.packagePath,
-        toolDirectory: this.toolDirectory,
-        pnpmScriptPath: this.pnpmScriptPath,
-        platform: this.platform,
-        profileDirectory: this.#profileDirectory(),
-        spawnProcess: this.spawnProcess,
-        timeout: this.installTimeout,
-      })
-    } catch (error) {
-      installError = error
-    }
+    await this.installArchive({
+      packagePath: this.packagePath,
+      profileDirectory: this.#profileDirectory(),
+      platform: this.platform,
+    })
     let after = await this.inspect({ state: 'stopped' })
     if (after.installedVersion && compareVersions(after.installedVersion, PLUGIN_VERSION) >= 0) {
       await this.#setBundleEnabled(true)
       after = await this.inspect({ state: 'stopped' })
       return after
     }
-    if (installError) throw installError
     if (!after.installedVersion || compareVersions(after.installedVersion, PLUGIN_VERSION) < 0) {
       throw new Error('配套插件安装后未能验证')
     }
@@ -116,32 +113,22 @@ class CompanionPluginManager {
     const before = await this.inspect(localDshState)
     if (before.blockedByRunningDsh) throw new Error('请先停止本机 DSH，再卸载配套插件')
     if (!before.installedVersion) {
+      await this.#removeManifestDependency()
       await this.#setBundleEnabled(false)
       return this.inspect({ state: 'stopped' })
     }
 
-    let uninstallError = null
-    try {
-      await runPluginRemove({
-        executable: this.dshExecutable,
-        nodeExecutable: this.nodeExecutable,
-        toolDirectory: this.toolDirectory,
-        pnpmScriptPath: this.pnpmScriptPath,
-        platform: this.platform,
-        profileDirectory: this.#profileDirectory(),
-        spawnProcess: this.spawnProcess,
-        timeout: this.installTimeout,
-      })
-    } catch (error) {
-      uninstallError = error
-    }
+    await this.removePlugin({
+      profileDirectory: this.#profileDirectory(),
+      platform: this.platform,
+    })
+    await this.#removeManifestDependency()
     let after = await this.inspect({ state: 'stopped' })
     if (!after.installedVersion) {
       await this.#setBundleEnabled(false)
       after = await this.inspect({ state: 'stopped' })
       return after
     }
-    if (uninstallError) throw uninstallError
     throw new Error('配套插件卸载后未能验证')
   }
 
@@ -161,6 +148,7 @@ class CompanionPluginManager {
     try {
       await runProfileInitialize({
         executable: this.dshExecutable,
+        commandArgs: this.dshArguments,
         dshHome: this.#dshRoot(),
         toolDirectory: this.toolDirectory,
         pnpmScriptPath: this.pnpmScriptPath,
@@ -192,6 +180,16 @@ class CompanionPluginManager {
       ...dependencies,
       [PLUGIN_NAME]: packageReference,
     }
+    await this.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+  }
+
+  async #removeManifestDependency() {
+    const manifestPath = this.#path().join(this.#profileDirectory(), 'package.json')
+    const manifest = await this.#readProfileManifest()
+    if (!manifest || !isPlainRecord(manifest.dependencies) || !(PLUGIN_NAME in manifest.dependencies)) return
+    const dependencies = { ...manifest.dependencies }
+    delete dependencies[PLUGIN_NAME]
+    manifest.dependencies = dependencies
     await this.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
   }
 
@@ -255,6 +253,7 @@ class CompanionPluginManager {
 
 function runPluginInstall({
   executable,
+  commandArgs = [],
   nodeExecutable,
   packagePath,
   toolDirectory,
@@ -279,7 +278,7 @@ function runPluginInstall({
   }
   return runPluginCommand({
     executable,
-    args: ['plugin', '--profile', 'web', 'add', packagePath],
+    args: [...commandArgs, 'plugin', '--profile', 'web', 'add', packagePath],
     toolDirectory,
     pnpmScriptPath,
     platform,
@@ -289,8 +288,104 @@ function runPluginInstall({
   })
 }
 
+async function installBundledArchive({
+  packagePath,
+  profileDirectory,
+  platform = process.platform,
+  fileSystem = fs,
+  tarImpl = tar,
+  createId = randomUUID,
+}) {
+  const pathApi = platform === 'win32' ? path.win32 : path.posix
+  const nodeModules = pathApi.join(profileDirectory, 'node_modules')
+  const target = pathApi.join(nodeModules, PLUGIN_NAME)
+  const backup = `${target}.backup-${createId()}`
+  await fileSystem.promises.mkdir(nodeModules, { recursive: true })
+  const staging = await fileSystem.promises.mkdtemp(
+    pathApi.join(nodeModules, `.${PLUGIN_NAME}-staging-`),
+  )
+  let targetBackedUp = false
+  let targetInstalled = false
+  try {
+    await tarImpl.x({
+      file: packagePath,
+      cwd: staging,
+      strip: 1,
+      strict: true,
+      preserveOwner: false,
+      filter: (entryPath, entry) => {
+        const normalized = String(entryPath).replaceAll('\\', '/')
+        if (
+          !normalized.startsWith('package/')
+          || normalized.includes('/../')
+          || normalized.endsWith('/..')
+          || !['File', 'Directory'].includes(entry.type)
+        ) throw new Error('配套插件安装包格式不正确')
+        return true
+      },
+    })
+    await validateExtractedPlugin(staging, fileSystem)
+    try {
+      await fileSystem.promises.rename(target, backup)
+      targetBackedUp = true
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+    await fileSystem.promises.rename(staging, target)
+    targetInstalled = true
+    if (targetBackedUp) await fileSystem.promises.rm(backup, { recursive: true, force: true })
+  } catch (error) {
+    if (targetInstalled) await fileSystem.promises.rm(target, { recursive: true, force: true }).catch(() => undefined)
+    if (targetBackedUp) await fileSystem.promises.rename(backup, target).catch(() => undefined)
+    if (/^配套插件安装包格式不正确$/u.test(error?.message ?? '')) throw error
+    throw new Error('配套插件安装失败')
+  } finally {
+    await fileSystem.promises.rm(staging, { recursive: true, force: true }).catch(() => undefined)
+    if (!targetBackedUp || targetInstalled) {
+      await fileSystem.promises.rm(backup, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
+}
+
+async function validateExtractedPlugin(directory, fileSystem = fs) {
+  let manifest
+  try {
+    manifest = JSON.parse(await fileSystem.promises.readFile(path.join(directory, 'package.json'), 'utf8'))
+  } catch {
+    throw new Error('配套插件安装包格式不正确')
+  }
+  if (manifest?.name !== PLUGIN_NAME || manifest?.version !== PLUGIN_VERSION) {
+    throw new Error('配套插件安装包格式不正确')
+  }
+  const pending = [directory]
+  while (pending.length) {
+    const current = pending.pop()
+    for (const entry of await fileSystem.promises.readdir(current, { withFileTypes: true })) {
+      if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) {
+        throw new Error('配套插件安装包格式不正确')
+      }
+      if (entry.isDirectory()) pending.push(path.join(current, entry.name))
+    }
+  }
+}
+
+async function removeInstalledPlugin({
+  profileDirectory,
+  platform = process.platform,
+  fileSystem = fs,
+}) {
+  const pathApi = platform === 'win32' ? path.win32 : path.posix
+  const target = pathApi.join(profileDirectory, 'node_modules', PLUGIN_NAME)
+  try {
+    await fileSystem.promises.rm(target, { recursive: true, force: true })
+  } catch {
+    throw new Error('配套插件卸载失败')
+  }
+}
+
 function runProfileInitialize({
   executable,
+  commandArgs = [],
   dshHome,
   toolDirectory,
   pnpmScriptPath,
@@ -300,7 +395,7 @@ function runProfileInitialize({
 }) {
   return runPluginCommand({
     executable,
-    args: ['--profile', 'web', '--dump-config'],
+    args: [...commandArgs, '--profile', 'web', '--dump-config'],
     toolDirectory,
     pnpmScriptPath,
     platform,
@@ -313,6 +408,7 @@ function runProfileInitialize({
 
 function runPluginRemove({
   executable,
+  commandArgs = [],
   nodeExecutable,
   toolDirectory,
   pnpmScriptPath,
@@ -336,7 +432,7 @@ function runPluginRemove({
   }
   return runPluginCommand({
     executable,
-    args: ['plugin', '--profile', 'web', 'remove', PLUGIN_NAME],
+    args: [...commandArgs, 'plugin', '--profile', 'web', 'remove', PLUGIN_NAME],
     toolDirectory,
     pnpmScriptPath,
     platform,
@@ -480,6 +576,8 @@ module.exports = {
   compareVersions,
   commandEnvironment,
   environmentWithDshHome,
+  installBundledArchive,
+  removeInstalledPlugin,
   runPluginInstall,
   runPluginRemove,
   runProfileInitialize,

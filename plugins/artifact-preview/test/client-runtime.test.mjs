@@ -20,7 +20,7 @@ function fakeDocument() {
   }
 }
 
-function loadClient(href, { popup = true, producedPaths = ['demo.html'] } = {}) {
+function loadClient(href, { popup = true, producedPaths = ['demo.html'], connectionVersion = 'rc2' } = {}) {
   let definition
   const opened = []
   const assigned = []
@@ -68,7 +68,7 @@ function loadClient(href, { popup = true, producedPaths = ['demo.html'] } = {}) 
     throw new Error(`unexpected module ${id}`)
   })
   const connection = {
-    hostDescription: {},
+    ...(connectionVersion === 'rc2' ? { hostDescription: {} } : {}),
     rpc: {
       call(channel, endpoint, payload) {
         rpcCalls.push({ channel, endpoint, payload })
@@ -93,8 +93,66 @@ function loadClient(href, { popup = true, producedPaths = ['demo.html'] } = {}) 
     },
   }
   plugin.apply(ctx)
-  return { assigned, effects, fileMentions, opened, plugin, registration, rpcCalls }
+  // Exercise the framework's observable binding before mounting, rather than
+  // letting an undefined source pass because the component is mocked.
+  function mountProduced(props) {
+    const injected = registration.options.inject?.(props.sessionId) ?? {}
+    const bound = { ...injected }
+    for (const [name, source] of Object.entries(injected.hooks ?? {})) {
+      new WeakMap().set(source, true)
+      bound[`use${name[0].toUpperCase()}${name.slice(1)}`] = select => select(source.getSnapshot?.())
+    }
+    const rendered = registration.component({ ...props, ...bound })
+    // Both real upstream components call these even with isLoopback=false.
+    if (connectionVersion === 'rc1') {
+      rendered.props.ensureWorkspacePathOpen()
+      rendered.props.useWorkspacePathOpen(value => value === true)
+    } else {
+      rendered.props.useHostDescription(value => value?.canOpenPath === true)
+    }
+    return rendered
+  }
+  return { assigned, effects, fileMentions, opened, plugin, registration, rpcCalls, mountProduced }
 }
+
+function turnOwner(openFile = () => {}) {
+  return { turn: { data: { get: () => ({}) } }, seq: 1, openFile }
+}
+
+test('mounts the RC.1 capability contract without a legacy hostDescription source', () => {
+  const runtime = loadClient('http://127.0.0.1:13080/#dsh_tunnel_preview=web', { connectionVersion: 'rc1' })
+  const rendered = runtime.mountProduced({ ...turnOwner(), sessionId: 'rc1-session' })
+  rendered.props.openFile('demo.html')
+  const request = JSON.parse(Buffer.from(new URL(runtime.opened[0].url).searchParams.get('dsh_artifact_preview'), 'base64url'))
+  assert.equal(request.kind, 'preview')
+  assert.equal(request.sessionId, 'rc1-session')
+})
+
+test('keeps the RC.2 produced-files component contract working', () => {
+  const runtime = loadClient('http://127.0.0.1:13080/?dsh_tunnel_preview=web')
+  assert.equal(runtime.mountProduced({ ...turnOwner(), sessionId: 'rc2-session' }).props.isLoopback, false)
+})
+
+test('prose previews keep their owning session across interleaved renders', () => {
+  const runtime = loadClient('http://127.0.0.1:13080/?dsh_tunnel_preview=web')
+  const first = turnOwner()
+  const second = turnOwner()
+  const firstMention = runtime.fileMentions.forClosing(first).resolve('demo.html')
+  runtime.registration.component({ ...first, sessionId: 'first' })
+  runtime.registration.component({ ...second, sessionId: 'second' })
+  firstMention.open()
+  const request = JSON.parse(Buffer.from(new URL(runtime.opened[0].url).searchParams.get('dsh_artifact_preview'), 'base64url'))
+  assert.equal(request.sessionId, 'first')
+})
+
+test('a prose owner with no session binding cannot borrow another turn session', () => {
+  const runtime = loadClient('http://127.0.0.1:13080/?dsh_tunnel_preview=web')
+  runtime.registration.component({ ...turnOwner(), sessionId: 'other' })
+  runtime.fileMentions.forClosing(turnOwner()).resolve('demo.html').open()
+  const request = JSON.parse(Buffer.from(new URL(runtime.opened[0].url).searchParams.get('dsh_artifact_preview'), 'base64url'))
+  assert.equal(request.kind, 'error')
+  assert.equal(request.sessionId, undefined)
+})
 
 test('does not register any UI contribution on an unmarked local page', () => {
   const runtime = loadClient('http://127.0.0.1:3080/')
@@ -160,12 +218,9 @@ test('routes browser-native image extensions through the remote preview page', (
 test('routes produced-file mentions in closing prose through the same remote preview page', () => {
   const runtime = loadClient('http://127.0.0.1:13080/?dsh_tunnel_preview=web')
   const native = []
-  runtime.registration.component({ sessionId: 'one', openFile: path => native.push(path) })
-  const mentions = runtime.fileMentions.forClosing({
-    turn: { data: { get: () => ({}) } },
-    seq: 1,
-    openFile: path => native.push(path),
-  })
+  const owner = turnOwner(path => native.push(path))
+  runtime.registration.component({ ...owner, sessionId: 'one' })
+  const mentions = runtime.fileMentions.forClosing(owner)
   const mention = mentions.resolve('demo.html')
   assert.equal(mention.title, 'demo.html')
   mention.open()
@@ -173,24 +228,27 @@ test('routes produced-file mentions in closing prose through the same remote pre
   assert.deepEqual(native, [])
   const openedUrl = new URL(runtime.opened[0].url)
   assert.equal(openedUrl.searchParams.get('dsh_tunnel_preview'), 'web')
-  assert.ok(openedUrl.searchParams.has('dsh_artifact_preview'))
+  const request = JSON.parse(Buffer.from(openedUrl.searchParams.get('dsh_artifact_preview'), 'base64url'))
+  assert.equal(request.kind, 'preview')
+  assert.equal(request.sessionId, 'one')
+  assert.equal(request.producedPath, 'demo.html')
 })
 
 test('routes one unique relative-path mention to its absolute produced file', () => {
   const runtime = loadClient('http://127.0.0.1:13080/?dsh_tunnel_preview=web', {
     producedPaths: ['/workspace/pelican-bicycle/index.html'],
   })
-  runtime.registration.component({ sessionId: 'one', openFile: () => {} })
-  const mentions = runtime.fileMentions.forClosing({
-    turn: { data: { get: () => ({}) } },
-    seq: 1,
-    openFile: () => {},
-  })
+  const owner = turnOwner()
+  runtime.registration.component({ ...owner, sessionId: 'one' })
+  const mentions = runtime.fileMentions.forClosing(owner)
   const mention = mentions.resolve('pelican-bicycle/index.html')
   assert.equal(mention.title, '/workspace/pelican-bicycle/index.html')
   mention.open()
   const requestUrl = new URL(runtime.opened[0].url)
-  assert.ok(requestUrl.searchParams.has('dsh_artifact_preview'))
+  const request = JSON.parse(Buffer.from(requestUrl.searchParams.get('dsh_artifact_preview'), 'base64url'))
+  assert.equal(request.kind, 'preview')
+  assert.equal(request.sessionId, 'one')
+  assert.equal(request.producedPath, '/workspace/pelican-bicycle/index.html')
 })
 
 test('keeps an ambiguous relative-path mention inert', () => {
@@ -200,12 +258,9 @@ test('keeps an ambiguous relative-path mention inert', () => {
       '/workspace/second/pelican-bicycle/index.html',
     ],
   })
-  runtime.registration.component({ sessionId: 'one', openFile: () => {} })
-  const mentions = runtime.fileMentions.forClosing({
-    turn: { data: { get: () => ({}) } },
-    seq: 1,
-    openFile: () => {},
-  })
+  const owner = turnOwner()
+  runtime.registration.component({ ...owner, sessionId: 'one' })
+  const mentions = runtime.fileMentions.forClosing(owner)
   assert.equal(mentions.resolve('pelican-bicycle/index.html'), undefined)
   assert.equal(runtime.opened.length, 0)
 })

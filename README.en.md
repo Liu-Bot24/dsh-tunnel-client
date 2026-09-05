@@ -111,7 +111,7 @@ The plugin source is maintained with the main project under [`plugins/artifact-p
 ## Requirements
 
 - A working OpenSSH client installed on the system
-- The `dsh` command installed and available if DSH Tunnel should launch DSH locally
+- Node.js with `npx` for the default launch command; a custom command must be runnable on the current device
 - SSH enabled on remote hosts, with either an existing key or the account password available for first-time pairing
 - The remote DSH WebUI reachable from its own host at `127.0.0.1:<port>`
 
@@ -126,6 +126,8 @@ The local DSH entry is always the first item in the host list.
 3. DSH Tunnel starts DSH and opens the WebUI when the service is ready.
 
 The default port is `3080`. Use **Edit** to change the display name or launch port; a new port takes effect the next time DSH starts. The client stops only DSH processes that it launched itself and does not terminate externally managed instances.
+
+**Settings → Local DSH Launch Command** defaults to `npx --yes @deepseek-ai/dsh`. The client appends `web`, the local port, and `--no-open` when the selected DSH version supports it. You may replace the command body with `dsh`, a versioned NPX command, or an absolute executable path; stop local DSH before changing it. The command is stored only on the current device and must not contain passwords or tokens.
 
 ## Connecting to Remote DSH
 

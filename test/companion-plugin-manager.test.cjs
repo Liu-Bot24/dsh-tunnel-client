@@ -1,6 +1,9 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { EventEmitter } = require('node:events')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
 const {
   CompanionPluginManager,
   PLUGIN_ARCHIVE,
@@ -9,6 +12,8 @@ const {
   commandEnvironment,
   compareVersions,
   environmentWithDshHome,
+  installBundledArchive,
+  runProfileInitialize,
   translateInstallFailure,
 } = require('../src/core/companion-plugin-manager.cjs')
 
@@ -25,7 +30,27 @@ function fakeChild(exitCode = 0, stderr = '', stdout = '') {
   return child
 }
 
-test('installs the bundled plugin offline with the app runtime and verifies the result', async () => {
+test('initializes a profile through the selected custom DSH command without a shell', async () => {
+  let invocation = null
+  await runProfileInitialize({
+    executable: '/opt/homebrew/bin/npx',
+    commandArgs: ['--yes', '@deepseek-ai/dsh@next'],
+    dshHome: '/home/example/.dsh',
+    platform: 'linux',
+    spawnProcess: (command, args, options) => {
+      invocation = { command, args, options }
+      return fakeChild()
+    },
+  })
+  assert.equal(invocation.command, '/opt/homebrew/bin/npx')
+  assert.deepEqual(invocation.args, [
+    '--yes', '@deepseek-ai/dsh@next', '--profile', 'web', '--dump-config',
+  ])
+  assert.equal(invocation.options.shell, false)
+  assert.equal(invocation.options.env.DSH_HOME, '/home/example/.dsh')
+})
+
+test('installs only the bundled archive and verifies the result', async () => {
   let installed = false
   let bundles = []
   let dependencies = {}
@@ -34,8 +59,6 @@ test('installs the bundled plugin offline with the app runtime and verifies the 
     homeDirectory: '/home/example',
     packagePath: `/app/plugins/${PLUGIN_ARCHIVE}`,
     dshExecutable: '/usr/local/bin/dsh',
-    nodeExecutable: '/app/DSH Tunnel',
-    pnpmScriptPath: '/app/pnpm/bin/pnpm.cjs',
     platform: 'linux',
     access: async () => {},
     writeFile: async (_filename, contents) => {
@@ -54,27 +77,21 @@ test('installs the bundled plugin offline with the app runtime and verifies the 
       }
       return JSON.stringify({ name: PLUGIN_NAME, version: PLUGIN_VERSION })
     },
-    spawnProcess: (command, args, options) => {
-      invocation = { command, args, options }
+    installArchive: async (options) => {
+      invocation = options
       installed = true
-      return fakeChild()
     },
   })
 
   const result = await manager.install({ state: 'stopped' })
   assert.equal(result.state, 'installed')
-  assert.deepEqual(invocation.args, [
-    '/app/pnpm/bin/pnpm.cjs', '--dir', '/home/example/.dsh/profiles/web',
-    'add', '--offline', `/app/plugins/${PLUGIN_ARCHIVE}`,
-  ])
-  assert.equal(invocation.command, '/app/DSH Tunnel')
-  assert.equal(invocation.options.shell, false)
-  assert.equal(invocation.options.env.ELECTRON_RUN_AS_NODE, '1')
-  assert.equal(invocation.options.env.npm_node_execpath, '/app/DSH Tunnel')
+  assert.equal(invocation.packagePath, `/app/plugins/${PLUGIN_ARCHIVE}`)
+  assert.equal(invocation.profileDirectory, '/home/example/.dsh/profiles/web')
+  assert.equal(invocation.platform, 'linux')
   assert.equal(dependencies[PLUGIN_NAME], `file:/app/plugins/${PLUGIN_ARCHIVE}`)
 })
 
-test('rewrites a stale bundled archive reference before invoking pnpm', async () => {
+test('rewrites a stale bundled archive reference before isolated installation', async () => {
   let manifest = {
     dsh: { profile: { bundles: [PLUGIN_NAME] } },
     dependencies: {
@@ -83,13 +100,11 @@ test('rewrites a stale bundled archive reference before invoking pnpm', async ()
     },
   }
   let installedVersion = '0.1.4'
-  let manifestAtSpawn = null
+  let manifestAtInstall = null
   const packagePath = `/new-app/plugins/${PLUGIN_ARCHIVE}`
   const manager = new CompanionPluginManager({
     homeDirectory: '/home/example',
     packagePath,
-    nodeExecutable: '/new-app/DSH Tunnel',
-    pnpmScriptPath: '/new-app/pnpm/bin/pnpm.cjs',
     platform: 'linux',
     access: async () => {},
     readFile: async (filename) => {
@@ -99,28 +114,24 @@ test('rewrites a stale bundled archive reference before invoking pnpm', async ()
     writeFile: async (_filename, contents) => {
       manifest = JSON.parse(contents)
     },
-    spawnProcess: () => {
-      manifestAtSpawn = structuredClone(manifest)
+    installArchive: async () => {
+      manifestAtInstall = structuredClone(manifest)
       installedVersion = PLUGIN_VERSION
-      return fakeChild()
     },
   })
 
   const result = await manager.install({ state: 'stopped' })
   assert.equal(result.state, 'installed')
-  assert.equal(manifestAtSpawn.dependencies[PLUGIN_NAME], `file:${packagePath}`)
-  assert.equal(manifestAtSpawn.dependencies['another-plugin'], '1.0.0')
+  assert.equal(manifestAtInstall.dependencies[PLUGIN_NAME], `file:${packagePath}`)
+  assert.equal(manifestAtInstall.dependencies['another-plugin'], '1.0.0')
 })
 
-test('uses the bundled pnpm script through the app runtime on Windows', async () => {
+test('selects the Windows profile for isolated installation', async () => {
   let invocation = null
   const packagePath = 'C:\\Program Files\\DSH Tunnel\\plugin.tgz'
   const manager = new CompanionPluginManager({
     homeDirectory: 'C:\\Users\\example',
     packagePath,
-    toolDirectory: 'C:\\Program Files\\DSH Tunnel\\plugin-tools',
-    pnpmScriptPath: 'C:\\Program Files\\DSH Tunnel\\pnpm\\bin\\pnpm.cjs',
-    nodeExecutable: 'C:\\Program Files\\DSH Tunnel\\DSH Tunnel.exe',
     platform: 'win32',
     writeFile: async () => {},
     access: async () => {},
@@ -130,19 +141,16 @@ test('uses the bundled pnpm script through the app runtime on Windows', async ()
       }
       throw Object.assign(new Error('missing'), { code: 'ENOENT' })
     },
-    spawnProcess: (command, args, options) => {
-      invocation = { command, args, options }
-      return fakeChild(1, 'ordinary failure')
+    installArchive: async (options) => {
+      invocation = options
+      throw new Error('配套插件安装失败')
     },
   })
 
   await assert.rejects(() => manager.install({ state: 'stopped' }), /配套插件安装失败/)
-  assert.equal(invocation.command, 'C:\\Program Files\\DSH Tunnel\\DSH Tunnel.exe')
-  assert.deepEqual(invocation.args, [
-    'C:\\Program Files\\DSH Tunnel\\pnpm\\bin\\pnpm.cjs',
-    '--dir', 'C:\\Users\\example\\.dsh\\profiles\\web', 'add', '--offline', packagePath,
-  ])
-  assert.equal(invocation.options.env.ELECTRON_RUN_AS_NODE, '1')
+  assert.equal(invocation.packagePath, packagePath)
+  assert.equal(invocation.profileDirectory, 'C:\\Users\\example\\.dsh\\profiles\\web')
+  assert.equal(invocation.platform, 'win32')
 })
 
 test('initializes a fresh DSH web profile before installing the plugin', async () => {
@@ -150,6 +158,7 @@ test('initializes a fresh DSH web profile before installing the plugin', async (
   let installed = false
   let bundles = []
   const invocations = []
+  let archiveInvocation = null
   const manager = new CompanionPluginManager({
     homeDirectory: '/home/example',
     packagePath: `/app/plugins/${PLUGIN_ARCHIVE}`,
@@ -171,9 +180,12 @@ test('initializes a fresh DSH web profile before installing the plugin', async (
     },
     spawnProcess: (command, args, options) => {
       invocations.push({ command, args, options })
-      if (command === '/app/dsh-runner/dsh') profileReady = true
-      else installed = true
+      profileReady = true
       return fakeChild()
+    },
+    installArchive: async (options) => {
+      archiveInvocation = options
+      installed = true
     },
   })
 
@@ -184,15 +196,9 @@ test('initializes a fresh DSH web profile before installing the plugin', async (
       command: '/app/dsh-runner/dsh',
       args: ['--profile', 'web', '--dump-config'],
     },
-    {
-      command: '/app/DSH Tunnel',
-      args: [
-        '/app/pnpm/bin/pnpm.cjs', '--dir', '/home/example/.dsh/profiles/web',
-        'add', '--offline', `/app/plugins/${PLUGIN_ARCHIVE}`,
-      ],
-    },
   ])
   assert.equal(invocations[0].options.env.DSH_HOME, '/home/example/.dsh')
+  assert.equal(archiveInvocation.profileDirectory, '/home/example/.dsh/profiles/web')
 })
 
 test('reports a clear error when a fresh DSH web profile cannot be initialized', async () => {
@@ -258,41 +264,43 @@ test('refuses plugin changes after a failed stop while the DSH process is still 
   assert.equal(spawnCalled, false)
 })
 
-test('uninstalls the plugin with the bundled pnpm script and verifies removal', async () => {
+test('uninstalls only the companion plugin and preserves other dependencies', async () => {
   let installed = true
-  let bundles = [PLUGIN_NAME]
+  let manifest = {
+    dsh: { profile: { bundles: [PLUGIN_NAME, 'another-plugin'] } },
+    dependencies: {
+      [PLUGIN_NAME]: `file:/app/plugins/${PLUGIN_ARCHIVE}`,
+      'another-plugin': '1.0.0',
+    },
+  }
   let invocation = null
   const manager = new CompanionPluginManager({
     homeDirectory: '/home/example',
     platform: 'linux',
     packagePath: `/app/plugins/${PLUGIN_ARCHIVE}`,
-    nodeExecutable: '/app/DSH Tunnel',
-    pnpmScriptPath: '/app/pnpm/bin/pnpm.cjs',
     access: async () => {},
     writeFile: async (_filename, contents) => {
-      bundles = JSON.parse(contents).dsh.profile.bundles
+      manifest = JSON.parse(contents)
     },
     readFile: async (filename) => {
       if (filename.endsWith('/profiles/web/package.json')) {
-        return JSON.stringify({ dsh: { profile: { bundles } } })
+        return JSON.stringify(manifest)
       }
       if (!installed) throw Object.assign(new Error('missing'), { code: 'ENOENT' })
       return JSON.stringify({ name: PLUGIN_NAME, version: PLUGIN_VERSION })
     },
-    spawnProcess: (command, args, options) => {
-      invocation = { command, args, options }
+    removePlugin: async (options) => {
+      invocation = options
       installed = false
-      return fakeChild()
     },
   })
 
   const result = await manager.uninstall({ state: 'stopped' })
   assert.equal(result.state, 'missing')
-  assert.deepEqual(invocation.args, [
-    '/app/pnpm/bin/pnpm.cjs', '--dir', '/home/example/.dsh/profiles/web',
-    'remove', PLUGIN_NAME,
-  ])
-  assert.equal(invocation.options.env.ELECTRON_RUN_AS_NODE, '1')
+  assert.equal(invocation.profileDirectory, '/home/example/.dsh/profiles/web')
+  assert.deepEqual(manifest.dsh.profile.bundles, ['another-plugin'])
+  assert.equal(PLUGIN_NAME in manifest.dependencies, false)
+  assert.equal(manifest.dependencies['another-plugin'], '1.0.0')
 })
 
 test('refuses uninstallation while local DSH is running', async () => {
@@ -334,7 +342,7 @@ test('does not overwrite a plugin newer than the bundled version', async () => {
   assert.equal(spawnCalled, false)
 })
 
-test('accepts a verified installation even when DSH exits nonzero after writing it', async () => {
+test('accepts a verified isolated archive installation', async () => {
   let installed = false
   let bundles = []
   const manager = new CompanionPluginManager({
@@ -356,9 +364,8 @@ test('accepts a verified installation even when DSH exits nonzero after writing 
       }
       return JSON.stringify({ name: PLUGIN_NAME, version: PLUGIN_VERSION })
     },
-    spawnProcess: () => {
+    installArchive: async () => {
       installed = true
-      return fakeChild(1)
     },
   })
 
@@ -427,7 +434,7 @@ test('uninstall cleans a stale bundle entry even when plugin files are already m
   assert.equal(spawnCalled, false)
 })
 
-test('still rejects a failed command when the plugin is absent', async () => {
+test('surfaces an isolated archive failure when the plugin is absent', async () => {
   const manager = new CompanionPluginManager({
     homeDirectory: '/home/example',
     platform: 'linux',
@@ -440,10 +447,71 @@ test('still rejects a failed command when the plugin is absent', async () => {
       }
       throw Object.assign(new Error('missing'), { code: 'ENOENT' })
     },
-    spawnProcess: () => fakeChild(1),
+    installArchive: async () => {
+      throw new Error('配套插件安装失败')
+    },
   })
 
   await assert.rejects(() => manager.install({ state: 'stopped' }), /配套插件安装失败/)
+})
+
+test('replaces only the companion plugin from the real bundled archive', async (context) => {
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'dsh-plugin-install-'))
+  context.after(() => fs.promises.rm(root, { recursive: true, force: true }))
+  const profileDirectory = path.join(root, 'profiles', 'web')
+  const targetDirectory = path.join(profileDirectory, 'node_modules', PLUGIN_NAME)
+  const unrelatedDirectory = path.join(profileDirectory, 'node_modules', 'trace-insight-placeholder')
+  await fs.promises.mkdir(targetDirectory, { recursive: true })
+  await fs.promises.mkdir(unrelatedDirectory, { recursive: true })
+  await fs.promises.writeFile(
+    path.join(targetDirectory, 'package.json'),
+    JSON.stringify({ name: PLUGIN_NAME, version: '0.1.5' }),
+  )
+  await fs.promises.writeFile(path.join(unrelatedDirectory, 'sentinel.txt'), 'untouched')
+
+  await installBundledArchive({
+    packagePath: path.join(__dirname, '..', 'resources', 'plugins', PLUGIN_ARCHIVE),
+    profileDirectory,
+    platform: process.platform,
+  })
+
+  const installed = JSON.parse(await fs.promises.readFile(path.join(targetDirectory, 'package.json'), 'utf8'))
+  assert.equal(installed.version, PLUGIN_VERSION)
+  assert.equal(await fs.promises.readFile(path.join(unrelatedDirectory, 'sentinel.txt'), 'utf8'), 'untouched')
+  const entries = await fs.promises.readdir(path.join(profileDirectory, 'node_modules'))
+  assert.equal(entries.some((entry) => entry.includes('-staging-') || entry.includes('.backup-')), false)
+})
+
+test('keeps the existing plugin when an archive fails validation', async (context) => {
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'dsh-plugin-invalid-'))
+  context.after(() => fs.promises.rm(root, { recursive: true, force: true }))
+  const profileDirectory = path.join(root, 'profiles', 'web')
+  const targetDirectory = path.join(profileDirectory, 'node_modules', PLUGIN_NAME)
+  await fs.promises.mkdir(targetDirectory, { recursive: true })
+  await fs.promises.writeFile(
+    path.join(targetDirectory, 'package.json'),
+    JSON.stringify({ name: PLUGIN_NAME, version: '0.1.5' }),
+  )
+
+  await assert.rejects(
+    () => installBundledArchive({
+      packagePath: '/unused/invalid.tgz',
+      profileDirectory,
+      platform: process.platform,
+      tarImpl: {
+        x: async ({ cwd }) => {
+          await fs.promises.writeFile(
+            path.join(cwd, 'package.json'),
+            JSON.stringify({ name: 'wrong-plugin', version: PLUGIN_VERSION }),
+          )
+        },
+      },
+    }),
+    /配套插件安装包格式不正确/,
+  )
+
+  const existing = JSON.parse(await fs.promises.readFile(path.join(targetDirectory, 'package.json'), 'utf8'))
+  assert.equal(existing.version, '0.1.5')
 })
 
 test('classifies writable-store failures without exposing raw diagnostics', () => {

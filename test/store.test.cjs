@@ -4,6 +4,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const {
+  DEFAULT_DSH_LAUNCH_COMMAND,
   DEFAULT_THEME,
   EndpointStore,
   SettingsStore,
@@ -126,8 +127,15 @@ test('uses and persists a supported interface theme', (t) => {
   const filename = path.join(directory, 'settings.json')
   const store = new SettingsStore(filename)
 
-  assert.deepEqual(store.load(), { theme: DEFAULT_THEME })
-  const saved = store.save({ theme: SUPPORTED_THEMES[2] })
+  assert.deepEqual(store.load(), {
+    theme: DEFAULT_THEME,
+    dshLaunchCommand: DEFAULT_DSH_LAUNCH_COMMAND,
+  })
+  const saved = store.save({
+    theme: SUPPORTED_THEMES[2],
+    dshLaunchCommand: '  dsh  ',
+  })
+  assert.equal(saved.dshLaunchCommand, 'dsh')
   assert.deepEqual(store.load(), saved)
   assertPrivatePosixMode(filename)
   assert.deepEqual(fs.readdirSync(directory), ['settings.json'])
@@ -140,11 +148,25 @@ test('rejects unknown interface themes', (t) => {
   assert.throws(() => store.save({ theme: 'made-up-theme' }), /主题不可用/)
 })
 
+test('rejects unsafe or malformed custom DSH launch commands', () => {
+  assert.throws(() => new SettingsStore('/unused').save({
+    theme: DEFAULT_THEME,
+    dshLaunchCommand: 'npx @deepseek-ai/dsh\nwhoami',
+  }), /只能填写一行/)
+  assert.throws(() => new SettingsStore('/unused').save({
+    theme: DEFAULT_THEME,
+    dshLaunchCommand: '"unterminated',
+  }), /引号没有闭合/)
+})
+
 test('ignores the retired DSH runtime setting when loading an older file', (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-tunnel-settings-'))
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
   const filename = path.join(directory, 'settings.json')
   fs.writeFileSync(filename, JSON.stringify({ theme: SUPPORTED_THEMES[1], dshRuntime: 'system' }))
   const store = new SettingsStore(filename)
-  assert.deepEqual(store.load(), { theme: SUPPORTED_THEMES[1] })
+  assert.deepEqual(store.load(), {
+    theme: SUPPORTED_THEMES[1],
+    dshLaunchCommand: DEFAULT_DSH_LAUNCH_COMMAND,
+  })
 })

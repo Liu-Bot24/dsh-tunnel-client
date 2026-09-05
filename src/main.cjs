@@ -172,13 +172,14 @@ function bindLocalDshState() {
 
 function configureDshServices(runtime) {
   localDsh?.removeAllListeners('state')
-  const environment = commandEnvironment(runtime.environmentExecutable, process.env, {
+  const environment = commandEnvironment(runtime.environmentExecutable, runtime.environment, {
     toolDirectory: pluginToolDirectory,
     pnpmScriptPath,
   })
   localDsh = new LocalDshManager({
     cwd: app.getPath('home'),
     executable: runtime.executable,
+    commandArgs: runtime.commandArgs,
     resolveVersion: runtime.resolveVersion,
     noOpenSupported: runtime.noOpenSupported,
     startupTimeout: runtime.startupTimeout,
@@ -189,6 +190,7 @@ function configureDshServices(runtime) {
     homeDirectory: app.getPath('home'),
     dshHome: process.env.DSH_HOME,
     dshExecutable: runtime.executable,
+    dshArguments: runtime.commandArgs,
     nodeExecutable: process.execPath,
     packagePath: app.isPackaged
       ? path.join(process.resourcesPath, 'plugins', PLUGIN_ARCHIVE)
@@ -257,7 +259,19 @@ function registerIpc(endpointStore, settingsStore) {
 
   ipcMain.handle('settings:save', (event, input) => {
     assertSender(event)
-    settings = settingsStore.save(normalizeSettings(input))
+    const nextSettings = normalizeSettings(input)
+    const launchCommandChanged = nextSettings.dshLaunchCommand !== settings.dshLaunchCommand
+    if (launchCommandChanged && localDshIsBusy()) {
+      throw new Error('请先停止本机 DSH，再修改启动命令')
+    }
+    const runtime = launchCommandChanged
+      ? resolveDshRuntime({
+          bundledExecutable: bundledDshExecutable,
+          launchCommand: nextSettings.dshLaunchCommand,
+        })
+      : null
+    settings = settingsStore.save(nextSettings)
+    if (runtime) configureDshServices(runtime)
     mainWindow?.setBackgroundColor(themeBackgrounds[settings.theme])
     return settings
   })
@@ -516,7 +530,10 @@ app.whenReady().then(async () => {
     dialog.showErrorBox('DSH Tunnel', '无法读取界面设置，已恢复默认设置。')
     settings = normalizeSettings({})
   }
-  const runtime = resolveDshRuntime({ bundledExecutable: bundledDshExecutable })
+  const runtime = resolveDshRuntime({
+    bundledExecutable: bundledDshExecutable,
+    launchCommand: settings.dshLaunchCommand,
+  })
   configureDshServices(runtime)
   registerIpc(endpointStore, settingsStore)
   tunnels.on('state', (state) => {
