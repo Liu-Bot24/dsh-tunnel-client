@@ -91,11 +91,11 @@ DSH Artifact Preview 是 DSH Tunnel 的配套插件，不是独立应用。DSH T
 
 需要安装到另一台设备时，优先在那台设备上打开 DSH Tunnel 并点击“安装插件”。也可以手动安装：
 
-1. 从与 DSH Tunnel 版本对应的 [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest) 下载 `dsh-plugin-artifact-preview-0.1.6.tgz`。
+1. 从与 DSH Tunnel 版本对应的 [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest) 下载 `dsh-plugin-artifact-preview-0.1.7.tgz`。
 2. 在运行目标 DSH 的设备上执行：
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.6.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.7.tgz
 ```
 
 3. 重启该设备上的 DSH。

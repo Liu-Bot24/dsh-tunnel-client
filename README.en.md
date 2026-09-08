@@ -91,11 +91,11 @@ The client shows the local installation state under **Settings → Remote Artifa
 
 To install it on another device, preferably open DSH Tunnel on that device and click **Install Plugin**. You can also install it manually:
 
-1. Download `dsh-plugin-artifact-preview-0.1.6.tgz` from the matching [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest).
+1. Download `dsh-plugin-artifact-preview-0.1.7.tgz` from the matching [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest).
 2. On the device running the target DSH instance, run:
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.6.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.7.tgz
 ```
 
 3. Restart DSH on that device.
