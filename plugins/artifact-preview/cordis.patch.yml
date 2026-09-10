@@ -1,3 +1,7 @@
+- id: connection
+  inject:
+    - webRuntime
+    - webServer
 - insert:
     - id: artifact-preview
       name: dsh-plugin-artifact-preview

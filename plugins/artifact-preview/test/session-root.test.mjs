@@ -35,3 +35,14 @@ test('header identity uses immutable id, creation time, and cwd', () => {
   assert.equal(sameHeaderIdentity(base, { ...base, version: 99 }), true)
   assert.equal(sameHeaderIdentity(base, { ...base, cwd: '/tmp/two' }), false)
 })
+
+
+test('resolves an inactive session from the new persistence snapshot without losing conflict checks', async () => {
+  await withRoot(async root => {
+    const header = { id: 'one', createdAt: 1, version: 3, cwd: root }
+    const persistence = { list: async () => [{ header, revision: 'opaque-revision' }] }
+    const result = await resolveSessionRoot({ sessions: { get: () => undefined }, sessionPersistence: persistence }, 'one')
+    assert.equal(result.root, await realpath(root))
+    await assert.rejects(() => resolveSessionRoot({ sessions: { get: () => ({ header: { ...header, createdAt: 2 } }) }, sessionPersistence: persistence }, 'one'), error => error.code === 'session-conflict')
+  })
+})

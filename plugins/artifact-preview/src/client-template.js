@@ -237,7 +237,12 @@ function renderPreviewPage(connection, request) {
       })
 }
 
+function hasPresentedFiles(owner) {
+  return (owner.turn?.data?.get('deliverables')?.presented ?? []).some(file => file.seq <= owner.seq)
+}
+
 function selectProduced(owner) {
+  if (hasPresentedFiles(owner)) return null
   const paths = producedForClosing(owner.turn.data.get('deliverables'), owner.seq)
   return paths.length > 0 ? paths : null
 }
@@ -269,11 +274,11 @@ function apply(ctx) {
   }, TunnelProducedFiles))
 
   const nativeForClosing = fileMentions.forClosing.bind(fileMentions)
-  const remoteForClosing = owner => {
+  const remoteForClosing = (owner, sessionId) => {
     const paths = selectProduced(owner)
-    if (paths === null) return nativeForClosing(owner)
+    if (paths === null) return nativeForClosing(owner, sessionId)
     return mentionResolver(paths, producedPath => {
-      openProducedPath(producedPath, owner.openFile, sessionIdsByTurn.get(owner.turn))
+      openProducedPath(producedPath, owner.openFile, sessionId ?? sessionIdsByTurn.get(owner.turn))
     })
   }
   fileMentions.forClosing = remoteForClosing

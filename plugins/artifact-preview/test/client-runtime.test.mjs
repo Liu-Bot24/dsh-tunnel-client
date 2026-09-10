@@ -20,7 +20,7 @@ function fakeDocument() {
   }
 }
 
-function loadClient(href, { popup = true, producedPaths = ['demo.html'], connectionVersion = 'rc2' } = {}) {
+function loadClient(href, { popup = true, producedPaths = ['demo.html'], connectionVersion = 'rc2', nativeMentions = () => undefined } = {}) {
   let definition
   const opened = []
   const assigned = []
@@ -76,7 +76,7 @@ function loadClient(href, { popup = true, producedPaths = ['demo.html'], connect
       },
     },
   }
-  const fileMentions = { forClosing: () => undefined }
+  const fileMentions = { forClosing: nativeMentions }
   const effects = []
   let registration
   const ctx = {
@@ -275,4 +275,24 @@ test('opens each preview request without falling back to native open', () => {
   assert.equal(runtime.assigned.length, 0)
   assert.match(runtime.opened.at(-1).url, /[?&]dsh_artifact_preview=/u)
   assert.deepEqual(native, [])
+})
+
+
+test('keeps new declared-file cards and forwards their session to the native mention resolver', () => {
+  const calls = []
+  const native = { resolve: () => 'native-declared-file' }
+  const runtime = loadClient('http://127.0.0.1:13080/?dsh_tunnel_preview=web', { nativeMentions: (...args) => { calls.push(args); return native } })
+  const owner = { turn: { data: { get: () => ({ presented: [{ seq: 2, path: 'demo.html' }] }) } }, seq: 3, openFile() {} }
+  assert.equal(runtime.registration.options.select(owner), null)
+  assert.equal(runtime.fileMentions.forClosing(owner, 'declared-session'), native)
+  assert.equal(calls[0][1], 'declared-session')
+  owner.seq = 1
+  assert.deepEqual(Array.from(runtime.registration.options.select(owner)), ['demo.html'])
+})
+
+test('uses the explicit new session argument without borrowing a previously mounted turn', () => {
+  const runtime = loadClient('http://127.0.0.1:13080/?dsh_tunnel_preview=web')
+  runtime.fileMentions.forClosing(turnOwner(), 'explicit-session').resolve('demo.html').open()
+  const request = JSON.parse(Buffer.from(new URL(runtime.opened[0].url).searchParams.get('dsh_artifact_preview'), 'base64url'))
+  assert.equal(request.sessionId, 'explicit-session')
 })

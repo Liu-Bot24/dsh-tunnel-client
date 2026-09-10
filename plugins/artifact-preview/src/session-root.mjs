@@ -20,7 +20,7 @@ function platformAbsolute(candidate) {
 
 export async function resolveSessionRoot({ sessions, sessionPersistence }, sessionId) {
   const live = sessions.get(sessionId)?.header
-  const persisted = (await sessionPersistence.list()).filter(header => header.id === sessionId)
+  const persisted = (await sessionPersistence.list()).map(record => record?.header ?? record).filter(header => header?.id === sessionId)
   if (persisted.length > 1) fail('session-conflict', 'Session metadata is ambiguous.')
 
   const stored = persisted[0]

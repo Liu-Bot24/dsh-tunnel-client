@@ -9,7 +9,7 @@ test('client injection follows version-specific transitive dependencies across r
     '@deepseek-ai/dsh-client-ui-conversation',
     '@deepseek-ai/dsh-client-ui-deliverables',
   ])
-  assert.equal(manifest.dshCompatibility.version, '0.1.2-rc.1')
+  assert.equal(manifest.dshCompatibility.version, '0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2')
 })
 
 test('generated client is marker-gated and shadows only the produced-files chain', async () => {
