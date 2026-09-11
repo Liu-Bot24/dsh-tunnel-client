@@ -592,3 +592,12 @@ test('version comparison handles equal, older, newer, and prerelease-like values
   assert.equal(compareVersions('0.2.0', '0.1.4'), 1)
   assert.equal(compareVersions('0.1.4-beta.1', '0.1.4'), 0)
 })
+
+
+test('Windows package places the preview archive at the runtime lookup path', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'))
+  const contribution = manifest.build.extraResources.find(item => item.from === `resources/plugins/${PLUGIN_ARCHIVE}`)
+  assert.ok(contribution, 'the runtime bundle must be included in the Windows package')
+  const resources = 'C:\\DSH Tunnel\\resources'
+  assert.equal(path.win32.resolve(resources, contribution.to), path.win32.join(resources, 'plugins', PLUGIN_ARCHIVE))
+})

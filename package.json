@@ -40,7 +40,7 @@
       },
       {
         "from": "resources/plugins/dsh-plugin-artifact-preview-0.1.8.tgz",
-        "to": "plugins/dsh-plugin-artifact-preview-0.1.7.tgz"
+        "to": "plugins/dsh-plugin-artifact-preview-0.1.8.tgz"
       },
       {
         "from": "resources/plugin-tools",
