@@ -9,6 +9,8 @@ const spawn = crossSpawn ?? childProcess.spawn
 const spawnSync = crossSpawn?.sync ?? childProcess.spawnSync
 const { DSH_AUTH_REQUIRED_BODY, parseDshWebUrlLine } = require('./web-auth.cjs')
 
+const { resolveAccessLink } = require('./access-link.cjs')
+
 const DSH_TITLE = '<title>DeepSeek Harness</title>'
 const NO_OPEN_MINIMUM = Object.freeze({ major: 0, minor: 1, patch: 0, rc: 8 })
 
@@ -73,6 +75,17 @@ class LocalDshManager extends EventEmitter {
 
   hasOwnedProcess() {
     return Boolean(this.child && !this.child.cleaned)
+  }
+
+  async resolveOpenUrl(port = this.state.port) {
+    const child = this.child
+    const url = await resolveAccessLink({
+      port,
+      cachedUrl: child && !child.cleaned && child.port === port ? child.authUrl : null,
+      readFreshUrl: () => this.authHandoff?.read(port),
+    })
+    if (this.child !== child || (child && (child.cleaned || child.port !== port))) throw new Error('DSH 已停止')
+    return url
   }
 
   getOpenUrl(port = this.state.port) {

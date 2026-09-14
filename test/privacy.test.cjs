@@ -96,8 +96,8 @@ test('DSH launch tokens stay out of renderer state and persisted endpoint settin
   const endpoint = read('src/core/endpoint.cjs')
   const tunnel = read('src/core/tunnel-manager.cjs')
 
-  assert.match(main, /tunnels\.getOpenUrl\(id\)/u)
-  assert.match(main, /localDsh\.getOpenUrl\(port\)/u)
+  assert.match(main, /tunnels\.resolveOpenUrl\(id\)/u)
+  assert.match(main, /localDsh\.resolveOpenUrl\(port\)/u)
   assert.doesNotMatch(preload, /authUrl|token/u)
   assert.doesNotMatch(renderer, /authUrl|token/u)
   assert.doesNotMatch(endpoint, /authUrl|token/u)

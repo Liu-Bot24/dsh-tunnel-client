@@ -68,6 +68,8 @@ const detailFields = {
 const tunnelDetailElement = document.querySelector('#tunnel-detail')
 const routeStripElement = document.querySelector('#route-strip')
 const primaryActionButton = document.querySelector('#primary-endpoint-action')
+const copyLinkButton = document.querySelector('#copy-access-link')
+let copyingLink = false
 const stopButton = document.querySelector('#stop-tunnel')
 const editButton = document.querySelector('#edit-endpoint')
 const pairingFields = {
@@ -217,6 +219,7 @@ function renderEndpointDetail() {
   else if (state.state === 'starting') primaryActionButton.textContent = '连接中…'
   else if (state.state === 'stopping') primaryActionButton.textContent = '停止中…'
   else primaryActionButton.textContent = '连接并打开'
+  copyLinkButton.disabled = copyingLink || (isLocal ? state.state !== 'running' : state.state !== 'connected')
   stopButton.classList.remove('hidden')
   stopButton.textContent = isLocal ? '停止' : '断开'
   stopButton.disabled = isLocal ? !state.owned : !state.active
@@ -296,6 +299,22 @@ async function connectAndOpen(id, { skipPairingCheck = false } = {}) {
     showNotice(message)
   }
 }
+
+copyLinkButton.addEventListener('click', async () => {
+  const id = selectedEndpointId
+  if (!id || copyingLink) return
+  copyingLink = true
+  renderEndpointDetail()
+  try {
+    await window.dshTunnel.copyAccessLink(id)
+    showNotice('已复制访问链接', 'success')
+  } catch (error) {
+    showNotice(userMessage(error, '访问链接复制失败'))
+  } finally {
+    copyingLink = false
+    renderEndpointDetail()
+  }
+})
 
 async function openEndpoint(id) {
   clearNotice()

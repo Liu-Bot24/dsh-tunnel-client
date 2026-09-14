@@ -1,6 +1,6 @@
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, session, shell, Tray } = require('electron')
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, session, shell, Tray } = require('electron')
 const { DEFAULT_THEME, EndpointStore, SettingsStore, normalizeSettings } = require('./core/store.cjs')
 const { normalizeEndpoint, loopbackUrl } = require('./core/endpoint.cjs')
 const { SshPairingService } = require('./core/ssh-pairing.cjs')
@@ -90,7 +90,7 @@ function notifyEndpointsChanged() {
 
 async function openLocalDsh(port) {
   const publicUrl = `http://127.0.0.1:${port}/`
-  await shell.openExternal(localDsh.getOpenUrl(port))
+  await shell.openExternal(await localDsh.resolveOpenUrl(port))
   return publicUrl
 }
 
@@ -105,20 +105,24 @@ async function stopTunnel(id) {
   return tunnels.stop(id)
 }
 
-async function openEndpoint(id) {
+async function resolveEndpointUrl(id) {
   const endpoint = findEndpoint(id)
   let url
   if (endpoint.mode === 'ssh') {
     const state = tunnels.get(id)
     if (state?.state !== 'connected') throw new Error('请先连接，再打开 DSH')
-    url = tunnels.getOpenUrl(id)
+    url = await tunnels.resolveOpenUrl(id)
   } else {
     const state = await localDsh.inspect(endpoint.remotePort)
     if (state.state !== 'running') throw new Error('本机 DSH 尚未启动')
-    url = localDsh.getOpenUrl(endpoint.remotePort)
+    url = await localDsh.resolveOpenUrl(endpoint.remotePort)
   }
-  await shell.openExternal(url)
-  return loopbackUrl(endpoint)
+  return url
+}
+
+async function openEndpoint(id) {
+  await shell.openExternal(await resolveEndpointUrl(id))
+  return loopbackUrl(findEndpoint(id))
 }
 
 async function startLocalDsh() {
@@ -325,6 +329,13 @@ function registerIpc(endpointStore, settingsStore) {
   ipcMain.handle('tunnels:stop', async (event, id) => {
     assertSender(event)
     return stopTunnel(id)
+  })
+
+  ipcMain.handle('endpoints:copy-link', async (event, id) => {
+    assertSender(event)
+    const url = await resolveEndpointUrl(id)
+    clipboard.writeText(url)
+    return { copied: true }
   })
 
   ipcMain.handle('endpoints:open', async (event, id) => {

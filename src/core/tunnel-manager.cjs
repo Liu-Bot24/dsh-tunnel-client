@@ -3,6 +3,7 @@ const { spawn } = require('node:child_process')
 const net = require('node:net')
 const { buildSshArgs } = require('./ssh.cjs')
 const { loopbackUrl, normalizeEndpoint } = require('./endpoint.cjs')
+const { resolveAccessLink } = require('./access-link.cjs')
 const { DSH_AUTH_REQUIRED_BODY, rewriteAuthenticatedWebUrl } = require('./web-auth.cjs')
 
 function delay(ms) {
@@ -264,6 +265,25 @@ class TunnelManager extends EventEmitter {
 
   async stopAll() {
     return Promise.all([...this.records.keys()].map((id) => this.stop(id)))
+  }
+
+  async resolveOpenUrl(id) {
+    const record = this.records.get(id)
+    if (!record || record.state !== 'connected') throw new Error('请先连接，再打开 DSH')
+    const url = await resolveAccessLink({
+      port: record.endpoint.localPort,
+      cachedUrl: record.authUrl,
+      preview: true,
+      readFreshUrl: async () => {
+        const fresh = await this.resolveRemoteAuth(record.endpoint)
+        return fresh ? rewriteAuthenticatedWebUrl(fresh, record.endpoint) : null
+      },
+    })
+    if (this.records.get(id) !== record || record.state !== 'connected' || record.exited) throw new Error('SSH 连接已中断')
+    record.authUrl = new URL(url).searchParams.has('token') ? url : null
+    record.authAvailable = Boolean(record.authUrl)
+    this.#emit(record)
+    return url
   }
 
   getOpenUrl(id) {

@@ -79,6 +79,18 @@ class WebAuthHandoffStore {
     return this.path.join(this.#directory(), handoffFilename(port))
   }
 
+  async read(port) {
+    const filename = this.#filename(port)
+    try {
+      const directory = await this.fs.promises.lstat(this.#directory())
+      const stat = await this.fs.promises.lstat(filename)
+      if (!directory.isDirectory() || directory.isSymbolicLink() || !stat.isFile() || stat.isSymbolicLink() || stat.size > 8192) return null
+      const record = JSON.parse(await this.fs.promises.readFile(filename, 'utf8'))
+      return record.version === HANDOFF_VERSION && record.port === port
+        ? authenticatedWebUrl(record.url, port) : null
+    } catch { return null }
+  }
+
   async clear(port) {
     try {
       await this.fs.promises.rm(this.#filename(port), { force: true })

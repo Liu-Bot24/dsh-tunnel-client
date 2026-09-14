@@ -20,7 +20,7 @@ function fakeDocument() {
   }
 }
 
-function loadClient(href, { popup = true, producedPaths = ['demo.html'], connectionVersion = 'rc2', nativeMentions = () => undefined } = {}) {
+function loadClient(href, { popup = true, producedPaths = ['demo.html'], connectionVersion = 'rc2', nativeMentions = () => undefined, nativeCapability = null } = {}) {
   let definition
   const opened = []
   const assigned = []
@@ -81,6 +81,12 @@ function loadClient(href, { popup = true, producedPaths = ['demo.html'], connect
   let registration
   const ctx = {
     get: name => name === 'connection' ? connection : fileMentions,
+    inject(names, callback) {
+      if (nativeCapability) callback({
+        get(name) { return nativeCapability[name] },
+        effect(callback) { effects.push(callback()) },
+      })
+    },
     effect(callback) {
       effects.push(callback())
     },
@@ -295,4 +301,44 @@ test('uses the explicit new session argument without borrowing a previously moun
   runtime.fileMentions.forClosing(turnOwner(), 'explicit-session').resolve('demo.html').open()
   const request = JSON.parse(Buffer.from(new URL(runtime.opened[0].url).searchParams.get('dsh_artifact_preview'), 'base64url'))
   assert.equal(request.sessionId, 'explicit-session')
+})
+
+function modernPreview(extensions = ['html', 'svg', 'png']) {
+  return {
+    sidebarRight: { openResource() {} },
+    sidebarRightTabs: { get: () => ({ id: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview' }) },
+    documentPreviews: { candidates: path => extensions.some(ext => path.endsWith('.' + ext)) ? [{ loading: 'bytes-complete' }] : [] },
+    remote: { workspaceFiles: { readAll() {} } },
+  }
+}
+
+test('modern supported files preserve the native turn contribution and prose resolver', () => {
+  const native = { resolve() {} }
+  const runtime = loadClient('http://127.0.0.1:13080/#dsh_tunnel_preview=web', { nativeCapability: modernPreview(), nativeMentions: () => native })
+  assert.equal(runtime.registration.options.select(turnOwner()), null)
+  assert.equal(runtime.fileMentions.forClosing(turnOwner(), 'modern'), native)
+  const opened = []
+  runtime.registration.component({ sessionId: 'modern', openFile: path => opened.push(path) }).props.openFile('demo.html')
+  assert.deepEqual(opened, ['demo.html'])
+  assert.equal(runtime.opened.length, 0)
+})
+
+test('sidebar presence alone does not disable legacy preview and unsupported formats still fall back', () => {
+  const incomplete = modernPreview(); incomplete.remote = { workspaceFiles: {} }
+  for (const nativeCapability of [incomplete, modernPreview(['pdf'])]) {
+    const runtime = loadClient('http://127.0.0.1:13080/#dsh_tunnel_preview=web', { nativeCapability })
+    assert.ok(runtime.registration.options.select(turnOwner()))
+    runtime.registration.component({ sessionId: 'one', openFile() { assert.fail('unsupported native') } }).props.openFile('demo.html')
+    assert.equal(runtime.opened.length, 1)
+  }
+})
+
+test('mixed files preserve native supported opening and do not hide native errors', () => {
+  const runtime = loadClient('http://127.0.0.1:13080/#dsh_tunnel_preview=web', { nativeCapability: modernPreview(), producedPaths: ['demo.html', 'image.avif'] })
+  assert.ok(runtime.registration.options.select(turnOwner()))
+  const rendered = runtime.registration.component({ sessionId: 'one', openFile() { throw new Error('native read failed') } })
+  assert.throws(() => rendered.props.openFile('demo.html'), /native read failed/)
+  assert.equal(runtime.opened.length, 0)
+  rendered.props.openFile('image.avif')
+  assert.equal(runtime.opened.length, 1)
 })

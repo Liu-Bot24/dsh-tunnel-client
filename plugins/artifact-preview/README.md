@@ -8,12 +8,14 @@
 
 [English](README.en.md)
 
+新版 DSH 具备对应格式的原生文档预览能力时，优先使用右侧栏，保留原生文件行、正文链接和交付卡片。旧版或缺少对应渲染器时继续使用独立兼容预览。原生预览支持的格式、关联资源和读取限制由 DSH 决定；下列限制仅适用于插件的兼容预览。
+
 ## 用户安装
 
 优先使用 DSH Tunnel 客户端“设置 → 远程产物预览插件”中的安装入口。需要安装到另一台设备时，从 DSH Tunnel Release 下载插件包，在运行目标 DSH 的设备上执行：
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.8.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.9.tgz
 ```
 
 重启 DSH 后生效。卸载时运行：

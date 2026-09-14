@@ -75,7 +75,7 @@ shasum -a 256 -c DSH.Tunnel-<版本>-macos-arm64.dmg.sha256
 
 DSH Artifact Preview 是 DSH Tunnel 的配套插件，不是独立应用。DSH Tunnel 负责建立 SSH 隧道并标记远程 WebUI，插件安装在实际运行 DSH 的设备上，负责安全读取会话生成的 HTML、HTM、SVG、PNG、JPG、JPEG、WebP、GIF 和 AVIF 产物。点击远程会话底部的“产物”文件名，或收尾回复中由 DSH 识别出的同一产物文件名，都会在当前操作设备的浏览器中打开预览。
 
-插件不会改变本机 DSH 页面，也不会接管普通网址、任意文本或未被 DSH 识别为产物的文件提及；未支持的文件继续使用 DSH 原有行为。文本预览限制为 5 MiB，图片预览限制为 20 MiB；插件会校验图片文件头，并且只允许读取会话工作目录内的普通文件。预览内容不能访问外部网络、提交表单、打开弹窗、跳转顶层页面或触发下载。
+插件不会改变本机 DSH 页面，也不会接管普通网址、任意文本或未被 DSH 识别为产物的文件提及；未支持的文件继续使用 DSH 原有行为。新版 DSH 已提供对应格式的原生文档预览时，文件点击优先进入原生右侧栏，读取与渲染遵循 DSH 的规则。旧版或缺少对应原生能力时使用兼容预览：文本限制为 5 MiB，图片限制为 20 MiB；插件会校验图片文件头，并且只允许读取会话工作目录内的普通文件。兼容预览内容不能访问外部网络、提交表单、打开弹窗、跳转顶层页面或触发下载。
 
 ### 安装位置
 
@@ -91,11 +91,11 @@ DSH Artifact Preview 是 DSH Tunnel 的配套插件，不是独立应用。DSH T
 
 需要安装到另一台设备时，优先在那台设备上打开 DSH Tunnel 并点击“安装插件”。也可以手动安装：
 
-1. 从与 DSH Tunnel 版本对应的 [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest) 下载 `dsh-plugin-artifact-preview-0.1.8.tgz`。
+1. 从与 DSH Tunnel 版本对应的 [GitHub Release](https://github.com/Liu-Bot24/dsh-tunnel-client/releases/latest) 下载 `dsh-plugin-artifact-preview-0.1.9.tgz`。
 2. 在运行目标 DSH 的设备上执行：
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.8.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.9.tgz
 ```
 
 3. 重启该设备上的 DSH。
@@ -142,7 +142,10 @@ dsh plugin --profile web remove dsh-plugin-artifact-preview
 
 保存后点击“连接并打开”。如果现有 SSH 密钥已经可用，客户端会直接连接；否则会显示首次配对窗口，要求核对主机指纹并输入一次目标设备账户的登录密码。配对完成后，后续连接将使用应用专用密钥，不再询问密码。
 
-DSH `0.1.2-rc.1` 及以上版本会为 WebUI 生成进程级启动 token。如果远端 DSH 也是由那台设备上的 DSH Tunnel 启动，两个客户端会通过现有 SSH 连接完成一次自动认证：启动地址只保存在当前用户可读的进程期交接文件中，DSH 停止后立即删除，不会写入主机配置或日志。若远端 DSH 由终端或其他服务启动，DSH Tunnel 无权取得其 token；首次访问时需要把该 DSH 启动输出中的地址改成本地转发端口并在浏览器中打开一次，之后即可继续使用客户端的“打开”操作。
+DSH `0.1.2-rc.1` 及以上版本使用带令牌的启动链接。主机运行或隧道连接后，可以点击“复制访问链接”，粘贴到当前电脑的其他浏览器中打开；远程链接使用本机转发端口，隧道断开后不可用。链接包含登录凭据，请勿公开分享。DSH 重启后应重新复制。
+
+客户端的“打开”和“复制访问链接”会验证当前链接；旧令牌失效时重新读取启动信息。若 DSH 由其他终端启动且没有可用交接记录，客户端会提示从该终端获取当前启动链接，不会自动重启服务。通过 SSH 访问时，需要将终端链接中的地址和端口改为当前电脑的 `127.0.0.1` 和本地转发端口，保留 `token` 参数。
+
 
 例如，本地端口为 `13080` 时，浏览器会打开：
 

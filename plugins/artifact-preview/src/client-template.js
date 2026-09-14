@@ -252,6 +252,29 @@ function apply(ctx) {
   const connection = ctx.get('connection')
   const fileMentions = ctx.get('chatFileMentions')
   const sessionIdsByTurn = new WeakMap()
+  let nativePreview = null
+  ctx.inject(['sidebarRight', 'sidebarRightTabs', 'documentPreviews', 'remote', 'remote.workspaceFiles'], nativeCtx => {
+    const right = nativeCtx.get('sidebarRight')
+    const tabs = nativeCtx.get('sidebarRightTabs')
+    const documents = nativeCtx.get('documentPreviews')
+    const remote = nativeCtx.get('remote')
+    const canPreview = path => {
+      const type = tabs.get('text')
+      return typeof right.openResource === 'function'
+        && type?.id === '@deepseek-ai/dsh-client-ui-sidebar-documentpreview'
+        && typeof remote.workspaceFiles?.readAll === 'function'
+        && documents.candidates(path).some(renderer => renderer.loading === 'bytes-complete')
+    }
+    nativePreview = canPreview
+    nativeCtx.effect(() => () => {
+      if (nativePreview === canPreview) nativePreview = null
+    }, 'artifact-preview: native capability')
+  })
+  const useNative = path => classifyProducedPath(path).disposition === 'native' || nativePreview?.(path) === true
+  const selectFallback = owner => {
+    const paths = selectProduced(owner)
+    return paths?.some(path => !useNative(path)) ? paths : null
+  }
   const request = requestedPreview()
   if (request) {
     renderPreviewPage(connection, request)
@@ -262,23 +285,26 @@ function apply(ctx) {
     if (props.turn && typeof props.turn === 'object') {
       sessionIdsByTurn.set(props.turn, props.sessionId)
     }
-    const openFile = producedPath => openProducedPath(producedPath, props.openFile, props.sessionId)
+    const openFile = producedPath => useNative(producedPath)
+      ? props.openFile(producedPath)
+      : openProducedPath(producedPath, props.openFile, props.sessionId)
     return h(ProducedFiles, { ...props, ...PREVIEW_ONLY_CAPABILITIES, openFile })
   }
 
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
     priority: -100,
-    select: selectProduced,
+    select: selectFallback,
     locale: 'deliverables',
   }, TunnelProducedFiles))
 
   const nativeForClosing = fileMentions.forClosing.bind(fileMentions)
   const remoteForClosing = (owner, sessionId) => {
-    const paths = selectProduced(owner)
+    const paths = selectFallback(owner)
     if (paths === null) return nativeForClosing(owner, sessionId)
     return mentionResolver(paths, producedPath => {
-      openProducedPath(producedPath, owner.openFile, sessionId ?? sessionIdsByTurn.get(owner.turn))
+      if (useNative(producedPath)) owner.openFile(producedPath)
+      else openProducedPath(producedPath, owner.openFile, sessionId ?? sessionIdsByTurn.get(owner.turn))
     })
   }
   fileMentions.forClosing = remoteForClosing

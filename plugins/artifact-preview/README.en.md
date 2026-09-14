@@ -8,12 +8,14 @@ The plugin reuses DSH's existing Produced row and artifact mentions in the closi
 
 [简体中文](README.md)
 
+When DSH provides native document preview for a file type, use its right sidebar and preserve native file rows, prose links, and declared-file cards. Older versions or formats without a native renderer retain the standalone compatibility preview. Native formats, related resources, and read limits are controlled by DSH; the limits below apply only to the compatibility preview.
+
 ## User Installation
 
 Prefer the install action under **DSH Tunnel → Settings → Remote Artifact Preview Plugin**. To install it on another device, download the plugin package from the DSH Tunnel Release and run this command on the device that hosts the target DSH instance:
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.8.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.9.tgz
 ```
 
 Restart DSH after installation. To uninstall:
