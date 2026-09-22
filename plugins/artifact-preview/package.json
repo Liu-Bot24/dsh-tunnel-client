@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-artifact-preview",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Safely preview remote DSH HTML, SVG, and image deliverables in the controlling browser.",
   "type": "module",
   "main": "./index.js",
@@ -30,10 +30,12 @@
         "@deepseek-ai/dsh-client-ui-deliverables"
       ],
       "platform": "web"
-    }
+    },
+    "manifestVersion": 1
   },
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=22.19.0",
+    "dsh": "0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2"
   },
   "scripts": {
     "build": "node ./scripts/build.mjs",

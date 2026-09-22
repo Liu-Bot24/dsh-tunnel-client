@@ -15,7 +15,7 @@ When DSH provides native document preview for a file type, use its right sidebar
 Prefer the install action under **DSH Tunnel → Settings → Remote Artifact Preview Plugin**. To install it on another device, download the plugin package from the DSH Tunnel Release and run this command on the device that hosts the target DSH instance:
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.9.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.10.tgz
 ```
 
 Restart DSH after installation. To uninstall:
