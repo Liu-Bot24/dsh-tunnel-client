@@ -15,7 +15,7 @@ When DSH provides native document preview for a file type, use its right sidebar
 Prefer the install action under **DSH Tunnel → Settings → Remote Artifact Preview Plugin**. To install it on another device, download the plugin package from the DSH Tunnel Release and run this command on the device that hosts the target DSH instance:
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.10.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.11.tgz
 ```
 
 Restart DSH after installation. To uninstall:
@@ -35,7 +35,7 @@ dsh plugin --profile web remove dsh-plugin-artifact-preview
 
 ## Development
 
-Node.js 22.19.0 or newer is required. DeepSeek Harness `0.1.1-rc.2`, `0.1.2-rc.1`, and `0.1.5-rc.1` are currently verified; the minimum compatibility baseline remains `0.1.0-rc.7`. Run these commands in this directory:
+Node.js 22.19.0 or newer is required. The current install manifest supports DeepSeek Harness `0.1.2-rc.1`, `0.1.5-rc.1`, `0.1.5-rc.2`, and `0.1.5-rc.3`. Run these commands in this directory:
 
 ```bash
 npm run build
