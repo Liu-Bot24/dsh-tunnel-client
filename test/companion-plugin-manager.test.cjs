@@ -586,11 +586,16 @@ test('normalizes Windows Path casing so npm can prepend its executable directory
   assert.equal(result.KEEP, 'yes')
 })
 
-test('version comparison handles equal, older, newer, and prerelease-like values', () => {
+test('version comparison preserves prerelease precedence for candidate-to-stable upgrades', () => {
   assert.equal(compareVersions('0.1.4', '0.1.4'), 0)
   assert.equal(compareVersions('0.1.3', '0.1.4'), -1)
   assert.equal(compareVersions('0.2.0', '0.1.4'), 1)
-  assert.equal(compareVersions('0.1.4-beta.1', '0.1.4'), 0)
+  assert.equal(compareVersions('0.1.4-beta.1', '0.1.4'), -1)
+  assert.equal(compareVersions('0.1.12-rc.0', '0.1.12'), -1)
+  assert.equal(compareVersions('0.1.12', '0.1.12-rc.0'), 1)
+  assert.equal(compareVersions('0.1.12-rc.2', '0.1.12-rc.10'), -1)
+  assert.equal(compareVersions('0.1.12+build.1', '0.1.12+build.2'), 0)
+  assert.equal(compareVersions('invalid', '0.1.12-rc.0'), -1)
 })
 
 

@@ -2,6 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const tar = require('tar')
+const semver = require('semver')
 const spawn = process.platform === 'win32' ? require('cross-spawn') : require('node:child_process').spawn
 
 const PLUGIN_NAME = 'dsh-plugin-artifact-preview'
@@ -551,17 +552,7 @@ function translatePluginFailure(stderr, action) {
 }
 
 function compareVersions(left, right) {
-  const leftParts = parseVersion(left)
-  const rightParts = parseVersion(right)
-  for (let index = 0; index < 3; index += 1) {
-    if (leftParts[index] !== rightParts[index]) return leftParts[index] < rightParts[index] ? -1 : 1
-  }
-  return 0
-}
-
-function parseVersion(value) {
-  const match = String(value).match(/^(\d+)\.(\d+)\.(\d+)/)
-  return match ? match.slice(1).map(Number) : [0, 0, 0]
+  return semver.compare(semver.valid(String(left)) ?? '0.0.0', semver.valid(String(right)) ?? '0.0.0')
 }
 
 function isPlainRecord(value) {
