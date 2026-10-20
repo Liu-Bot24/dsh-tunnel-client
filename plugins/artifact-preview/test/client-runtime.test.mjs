@@ -20,7 +20,7 @@ function fakeDocument() {
   }
 }
 
-function loadClient(href, { popup = true, producedPaths = ['demo.html'], connectionVersion = 'rc2', nativeMentions = () => undefined, nativeCapability = null } = {}) {
+function loadClient(href, { popup = true, producedPaths = ['demo.html'], connectionVersion = 'rc2', modernDeliverables = false, nativeMentions = () => undefined, nativeCapability = null } = {}) {
   let definition
   const opened = []
   const assigned = []
@@ -58,11 +58,12 @@ function loadClient(href, { popup = true, producedPaths = ['demo.html'], connect
   }
   vm.runInNewContext(generated, context)
 
-  const React = { createElement: (component, props) => ({ component, props }) }
+  const React = { createElement: (component, props, ...children) => ({ component, props, children }) }
   const ProducedFiles = () => null
   const plugin = definition.factory(id => {
     if (id === 'react') return React
     if (id === '@deepseek-ai/dsh-client-ui-deliverables/client') {
+      if (modernDeliverables) return { apply() {}, inject: [] }
       return { ProducedFiles, producedForClosing: () => producedPaths }
     }
     throw new Error(`unexpected module ${id}`)
@@ -308,7 +309,7 @@ function modernPreview(extensions = ['html', 'svg', 'png']) {
     sidebarRight: { openResource() {} },
     sidebarRightTabs: { get: () => ({ id: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview' }) },
     documentPreviews: { candidates: path => extensions.some(ext => path.endsWith('.' + ext)) ? [{ loading: 'bytes-complete' }] : [] },
-    remote: { workspaceFiles: { readAll() {} } },
+    remote: { workspaceFiles: { readBytes() {} } },
   }
 }
 
@@ -321,6 +322,13 @@ test('modern supported files preserve the native turn contribution and prose res
   runtime.registration.component({ sessionId: 'modern', openFile: path => opened.push(path) }).props.openFile('demo.html')
   assert.deepEqual(opened, ['demo.html'])
   assert.equal(runtime.opened.length, 0)
+})
+
+test('the older native readAll transport still preserves supported file previews', () => {
+  const nativeCapability = modernPreview()
+  nativeCapability.remote.workspaceFiles = { readAll() {} }
+  const runtime = loadClient('http://127.0.0.1:13080/#dsh_tunnel_preview=web', { nativeCapability })
+  assert.equal(runtime.registration.options.select(turnOwner()), null)
 })
 
 test('sidebar presence alone does not disable legacy preview and unsupported formats still fall back', () => {
@@ -340,5 +348,48 @@ test('mixed files preserve native supported opening and do not hide native error
   assert.throws(() => rendered.props.openFile('demo.html'), /native read failed/)
   assert.equal(runtime.opened.length, 0)
   rendered.props.openFile('image.avif')
+  assert.equal(runtime.opened.length, 1)
+})
+
+test('DSH 0.2 list contribution renders only unsupported formats without removed exports', () => {
+  const runtime = loadClient('http://127.0.0.1:13080/#dsh_tunnel_preview=web', {
+    modernDeliverables: true, nativeCapability: modernPreview(),
+  })
+  const owner = { seq: 5, sessionId: 'new-session', openFile() { assert.fail('fallback used native') },
+    turn: { data: { get: () => ({
+      produced: [{ seq: 1, path: 'demo.html' }, { seq: 2, path: 'image.avif' }, { seq: 6, path: 'future.avif' }],
+      presented: [{ seq: 4, path: 'image.avif' }, { seq: 5, path: 'too-late.avif' }],
+    }) } } }
+  const rendered = runtime.registration.component(owner)
+  assert.equal(runtime.registration.options.id, 'artifact-preview-fallback')
+  assert.equal(rendered.component, 'div')
+  assert.equal(rendered.children.length, 1)
+  assert.equal(rendered.children[0].children[0], '预览 image.avif')
+  rendered.children[0].props.onClick()
+  const request = JSON.parse(Buffer.from(new URL(runtime.opened[0].url).searchParams.get('dsh_artifact_preview'), 'base64url'))
+  assert.deepEqual(request, { kind: 'preview', sessionId: 'new-session', producedPath: 'image.avif' })
+  assert.equal(runtime.registration.component({ ...owner, turn: { data: { get: () => ({ produced: [{ seq: 1, path: 'demo.html' }] }) } } }), null)
+})
+
+test('mixed DSH 0.2 mentions retain upstream aliases, ambiguity refusal and native errors', () => {
+  const runtime = loadClient('http://127.0.0.1:13080/#dsh_tunnel_preview=web', {
+    modernDeliverables: true, nativeCapability: modernPreview(),
+    nativeMentions: owner => ({ resolve(value) {
+      const path = value === 'alias' ? 'image.avif' : value === 'demo.html' ? value : null
+      return path ? { title: path, label: 'upstream', open: () => owner.openFile(path) } : undefined
+    } }),
+  })
+  const owner = { seq: 5, openFile() { throw new Error('native read failed') },
+    turn: { data: { get: () => ({
+      produced: [{ seq: 1, path: 'demo.html' }, { seq: 2, path: 'image.avif', argumentPath: 'ambiguous.avif' },
+        { seq: 3, path: 'ambiguous.avif' }],
+    }) } } }
+  const mentions = runtime.fileMentions.forClosing(owner, 'modern-session')
+  assert.equal(mentions.resolve('alias').label, '兼容预览 image.avif')
+  assert.equal(mentions.resolve('demo.html').label, 'upstream')
+  mentions.resolve('alias').open()
+  assert.equal(runtime.opened.length, 1)
+  assert.equal(mentions.resolve('ambiguous.avif'), undefined)
+  assert.throws(() => mentions.resolve('demo.html').open(), /native read failed/)
   assert.equal(runtime.opened.length, 1)
 })

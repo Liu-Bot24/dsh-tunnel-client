@@ -168,8 +168,14 @@ test('desktop packages include the trusted archive extractor used for isolated p
   const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'))
   const macPackager = fs.readFileSync(path.join(projectRoot, 'scripts/package-mac.mjs'), 'utf8')
   assert.equal(packageJson.dependencies.tar, '7.5.22')
-  assert.match(macPackager, /\^\\\/dist\(\$\|\\\/\)/)
-  assert.doesNotMatch(macPackager, /\(\^\|\\\/\)dist/)
+  const filters = require('node:vm').runInNewContext(macPackager.match(/ignore:\s*(\[[\s\S]*?\]),/)[1])
+  const ignored = filename => filters.some(filter => filter.test(filename))
+  for (const filename of ['/src/main.cjs', '/package.json', '/node_modules/tar/dist/commonjs/index.js']) {
+    assert.equal(ignored(filename), false, `runtime file must ship: ${filename}`)
+  }
+  for (const filename of ['/dist/old.app', '/.upgrade-20261021/data-inventory.json', '/DEVELOPMENT_LOG.md', '/AGENTS.md', '/test/local.json']) {
+    assert.equal(ignored(filename), true, `local-only file must not ship: ${filename}`)
+  }
 })
 
 test('desktop packages keep the official npx entry as the default and expose a custom command setting', () => {

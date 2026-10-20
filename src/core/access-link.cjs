@@ -45,7 +45,10 @@ async function resolveAccessLink({ port, cachedUrl = null, readFreshUrl = async 
     const local = new URL(valid); local.hostname = '127.0.0.1'
     try {
       const exchange = await requestPage(local)
-      if (exchange.status !== 303 || exchange.headers.location !== '/') return null
+      // DSH 0.2 uses "./"; older versions use "/". Resolve without following
+      // redirects, and accept only the same token-free local root.
+      if (exchange.status !== 303 || !exchange.headers.location
+        || new URL(exchange.headers.location, local).href !== base) return null
       const cookie = exchange.headers['set-cookie']?.map(value => value.split(';', 1)[0]).join('; ')
       if (!cookie) return null
       const page = await requestPage(base, cookie)

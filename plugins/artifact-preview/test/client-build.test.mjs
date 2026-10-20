@@ -2,17 +2,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-test('client injection follows supported DSH release lines through rc.3', async () => {
+test('client injection declares the verified DSH 0.2 connection contract', async () => {
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
   assert.deepEqual(manifest.dsh.client.inject, [
     '@deepseek-ai/dsh-client-connection',
     '@deepseek-ai/dsh-client-ui-conversation',
     '@deepseek-ai/dsh-client-ui-deliverables',
   ])
-  assert.equal(manifest.dshCompatibility.version, '0.1.2-rc.1 || 0.1.5-rc.1 || 0.1.5-rc.2 || 0.1.5-rc.3')
+  assert.equal(manifest.dshCompatibility.version, '0.2.1-rc.2')
   assert.equal(manifest.engines.dsh, manifest.dshCompatibility.version)
   const supportedVersions = manifest.engines.dsh.split(' || ')
-  assert.equal(supportedVersions.includes('0.1.5-rc.3'), true)
+  assert.equal(supportedVersions.includes('0.2.1-rc.2'), true)
   assert.equal(supportedVersions.includes('0.1.7-rc.2'), false)
   assert.equal(manifest.dsh.manifestVersion, 1)
 })

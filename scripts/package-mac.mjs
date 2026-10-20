@@ -34,13 +34,9 @@ const outputPaths = await packager({
   overwrite: true,
   prune: true,
   ignore: [
-    /^\/dist($|\/)/,
-    /^\/test($|\/)/,
-    /^\/scripts($|\/)/,
-    /^\/resources($|\/)/,
-    /^\/DEVELOPMENT_LOG\.md$/,
-    /^\/\.gitignore$/,
-    /^\/README\.md$/,
+    // Keep local upgrade inventories, operator notes and test artifacts out of
+    // the app. Assets are copied explicitly through extraResource above.
+    /^\/(?!src(?:\/|$)|node_modules(?:\/|$)|package\.json$)/,
   ],
 })
 

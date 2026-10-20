@@ -11,14 +11,14 @@ const { TunnelManager } = require('../src/core/tunnel-manager.cjs')
 const TOKEN = 'current-test-launch-token-123456789'
 const STALE = 'expired-test-launch-token-123456789'
 
-async function service(t, { legacy = false, unrelated = false, fakeExchange = false } = {}) {
+async function service(t, { legacy = false, unrelated = false, fakeExchange = false, location = '/' } = {}) {
   const requests = []
   const server = http.createServer((req, res) => {
     requests.push(req.url)
     const url = new URL(req.url, 'http://localhost')
     if (unrelated) { res.end('Other service'); return }
     if (url.searchParams.get('token') === TOKEN) {
-      res.writeHead(303, { location: '/', 'set-cookie': 'session=valid; HttpOnly' }); res.end(); return
+      res.writeHead(303, { location, 'set-cookie': 'session=valid; HttpOnly' }); res.end(); return
     }
     if (legacy || (!fakeExchange && req.headers.cookie === 'session=valid')) { res.end('<title>DeepSeek Harness</title>'); return }
     res.writeHead(401); res.end(DSH_AUTH_REQUIRED_BODY)
@@ -32,6 +32,17 @@ async function service(t, { legacy = false, unrelated = false, fakeExchange = fa
 test('valid live token is reusable and does not require a fresh secret read', async t => {
   const s = await service(t)
   for (let i = 0; i < 2; i++) assert.equal(await resolveAccessLink({ port: s.port, cachedUrl: s.url(TOKEN), readFreshUrl() { assert.fail('unneeded read') } }), s.url(TOKEN))
+})
+
+test('DSH 0.2 relative root exchange works; other destinations are rejected', async t => {
+  const current = await service(t, { location: './' })
+  assert.equal(await resolveAccessLink({ port: current.port, cachedUrl: current.url(TOKEN) }), current.url(TOKEN))
+  for (const location of ['https://example.invalid/', '//example.invalid/', 'http://127.0.0.1:1/', 'http://user@127.0.0.1/',
+    '/other', '/?token=leaked', '/#fragment', 'http://[invalid']) {
+    const s = await service(t, { location })
+    await assert.rejects(resolveAccessLink({ port: s.port, cachedUrl: s.url(TOKEN) }), { message: LINK_UNAVAILABLE })
+    assert.equal(s.requests.length, 2)
+  }
 })
 
 test('expired token is replaced with the current handoff and wrong tokens never return a bare link', async t => {

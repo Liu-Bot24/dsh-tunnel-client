@@ -43,13 +43,14 @@ try {
 
   const exchange = await fetch(manager.getOpenUrl(port), { redirect: 'manual' })
   assert.equal(exchange.status, 303)
-  assert.equal(exchange.headers.get('location'), '/')
+  assert.equal(new URL(exchange.headers.get('location'), cleanUrl).href, cleanUrl)
   const cookie = exchange.headers.get('set-cookie')?.split(';', 1)[0]
   assert.ok(cookie)
 
   const authenticated = await fetch(cleanUrl, { headers: { cookie } })
   assert.equal(authenticated.status, 200)
   assert.match(await authenticated.text(), /<title>DeepSeek Harness<\/title>/u)
+  assert.equal(await manager.resolveOpenUrl(port), manager.getOpenUrl(port))
 
   const handoff = path.join(operatorHome, '.dsh-tunnel', `web-auth-${port}.json`)
   const handoffMode = (await fs.stat(handoff)).mode & 0o777

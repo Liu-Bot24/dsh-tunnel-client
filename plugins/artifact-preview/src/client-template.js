@@ -1,5 +1,5 @@
 const React = require('react')
-const { ProducedFiles, producedForClosing } = require('@deepseek-ai/dsh-client-ui-deliverables/client')
+const { ProducedFiles, producedForClosing: legacyProducedForClosing } = require('@deepseek-ai/dsh-client-ui-deliverables/client')
 const { classifyProducedPath } = __artifactPreviewPathPolicy
 
 const h = React.createElement
@@ -242,8 +242,14 @@ function hasPresentedFiles(owner) {
 }
 
 function selectProduced(owner) {
-  if (hasPresentedFiles(owner)) return null
-  const paths = producedForClosing(owner.turn.data.get('deliverables'), owner.seq)
+  if (typeof legacyProducedForClosing === 'function' && hasPresentedFiles(owner)) return null
+  const data = owner.turn?.data?.get('deliverables')
+  const paths = typeof legacyProducedForClosing === 'function'
+    ? legacyProducedForClosing(data, owner.seq)
+    : [...new Set([
+      ...(data?.produced ?? []).filter(file => file.seq <= owner.seq),
+      ...(data?.presented ?? []).filter(file => file.seq < owner.seq),
+    ].map(file => file.path))]
   return paths.length > 0 ? paths : null
 }
 
@@ -262,7 +268,7 @@ function apply(ctx) {
       const type = tabs.get('text')
       return typeof right.openResource === 'function'
         && type?.id === '@deepseek-ai/dsh-client-ui-sidebar-documentpreview'
-        && typeof remote.workspaceFiles?.readAll === 'function'
+        && (typeof remote.workspaceFiles?.readBytes === 'function' || typeof remote.workspaceFiles?.readAll === 'function')
         && documents.candidates(path).some(renderer => renderer.loading === 'bytes-complete')
     }
     nativePreview = canPreview
@@ -288,11 +294,29 @@ function apply(ctx) {
     const openFile = producedPath => useNative(producedPath)
       ? props.openFile(producedPath)
       : openProducedPath(producedPath, props.openFile, props.sessionId)
-    return h(ProducedFiles, { ...props, ...PREVIEW_ONLY_CAPABILITIES, openFile })
+    if (typeof ProducedFiles === 'function') {
+      return h(ProducedFiles, { ...props, ...PREVIEW_ONLY_CAPABILITIES, openFile })
+    }
+    // DSH 0.2 no longer exports ProducedFiles, and turnTail is now a list.
+    // Contribute only unavailable native formats; leave delivery cards, change
+    // review and all native preview actions owned by DSH.
+    const paths = (selectProduced(props) ?? []).filter(path => !useNative(path))
+    if (!paths.length) return null
+    return h('div', {
+      'aria-label': translated('兼容预览', 'Compatibility previews'),
+      style: { display: 'flex', flexWrap: 'wrap', gap: 6 },
+    },
+      ...paths.map(path => h('button', {
+        key: path, type: 'button', title: path, onClick: () => openFile(path),
+        style: { font: 'inherit', fontSize: 12, color: 'var(--dsw-alias-link, #4265cc)',
+          background: 'transparent', border: '1px solid var(--dsw-alias-border-l2, #ccd1dc)',
+          borderRadius: 8, padding: '5px 10px', cursor: 'pointer' },
+      }, translated(`预览 ${basename(path)}`, `Preview ${basename(path)}`))))
   }
 
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
+    id: 'artifact-preview-fallback',
     priority: -100,
     select: selectFallback,
     locale: 'deliverables',
@@ -302,10 +326,22 @@ function apply(ctx) {
   const remoteForClosing = (owner, sessionId) => {
     const paths = selectFallback(owner)
     if (paths === null) return nativeForClosing(owner, sessionId)
-    return mentionResolver(paths, producedPath => {
+    const openFile = producedPath => {
       if (useNative(producedPath)) owner.openFile(producedPath)
       else openProducedPath(producedPath, owner.openFile, sessionId ?? sessionIdsByTurn.get(owner.turn))
-    })
+    }
+    const fallback = mentionResolver(paths, openFile)
+    // Preserve upstream aliases (including mutation argumentPath), labels and
+    // ambiguity checks. Only change how a confirmed unsupported file opens.
+    const native = nativeForClosing({ ...owner, openFile }, sessionId)
+    return { resolve(value) {
+      const match = native?.resolve(value)
+      if (match) return paths.includes(match.title) && !useNative(match.title)
+        ? { ...match, label: translated(`兼容预览 ${match.title}`, `Compatibility preview ${match.title}`) } : match
+      const operations = owner.turn?.data?.get('deliverables')?.produced ?? []
+      if (operations.some(file => file.seq <= owner.seq && file.argumentPath === value)) return undefined
+      return fallback.resolve(value)
+    } }
   }
   fileMentions.forClosing = remoteForClosing
   ctx.effect(() => () => {
