@@ -6,7 +6,7 @@ const semver = require('semver')
 const spawn = process.platform === 'win32' ? require('cross-spawn') : require('node:child_process').spawn
 
 const PLUGIN_NAME = 'dsh-plugin-artifact-preview'
-const PLUGIN_VERSION = '0.1.12'
+const PLUGIN_VERSION = '0.1.13'
 const PLUGIN_ARCHIVE = `${PLUGIN_NAME}-${PLUGIN_VERSION}.tgz`
 
 class CompanionPluginManager {

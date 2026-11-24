@@ -15,7 +15,7 @@
 优先使用 DSH Tunnel 客户端“设置 → 远程产物预览插件”中的安装入口。需要安装到另一台设备时，从 DSH Tunnel Release 下载插件包，在运行目标 DSH 的设备上执行：
 
 ```bash
-dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.12.tgz
+dsh plugin --profile web add ./dsh-plugin-artifact-preview-0.1.13.tgz
 ```
 
 重启 DSH 后生效。卸载时运行：
@@ -35,7 +35,7 @@ dsh plugin --profile web remove dsh-plugin-artifact-preview
 
 ## 开发
 
-需要 Node.js 22.19.0 或更高版本。本版本面向 DeepSeek Harness `0.2.1-rc.2`，不适用于仍依赖旧版 Web 服务接口的 DSH 0.1。在本目录中运行：
+需要 Node.js 22.19.0 或更高版本。本版本面向 DeepSeek Harness `0.2.1-rc.2` / `0.2.2-rc.5`，不适用于仍依赖旧版 Web 服务接口的 DSH 0.1。在本目录中运行：
 
 ```bash
 npm run build

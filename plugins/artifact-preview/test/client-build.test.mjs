@@ -9,10 +9,11 @@ test('client injection declares the verified DSH 0.2 connection contract', async
     '@deepseek-ai/dsh-client-ui-conversation',
     '@deepseek-ai/dsh-client-ui-deliverables',
   ])
-  assert.equal(manifest.dshCompatibility.version, '0.2.1-rc.2')
+  assert.equal(manifest.dshCompatibility.version, '0.2.1-rc.2 || 0.2.2-rc.5')
   assert.equal(manifest.engines.dsh, manifest.dshCompatibility.version)
   const supportedVersions = manifest.engines.dsh.split(' || ')
   assert.equal(supportedVersions.includes('0.2.1-rc.2'), true)
+  assert.equal(supportedVersions.includes('0.2.2-rc.5'), true)
   assert.equal(supportedVersions.includes('0.1.7-rc.2'), false)
   assert.equal(manifest.dsh.manifestVersion, 1)
 })
